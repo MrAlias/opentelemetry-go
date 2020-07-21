@@ -17,8 +17,10 @@ package stdout // import "go.opentelemetry.io/otel/exporters/metric/stdout"
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 	"time"
@@ -77,16 +79,31 @@ type expoLine struct {
 	Sum       interface{} `json:"sum,omitempty"`
 	Count     interface{} `json:"count,omitempty"`
 	LastValue interface{} `json:"last,omitempty"`
-
-	Quantiles interface{} `json:"quantiles,omitempty"`
+	Points    []point     `json:"points,omitempty"`
+	Quantiles []quantile  `json:"quantiles,omitempty"`
+	Histogram []bucket    `json:"histogram,omitempty"`
 
 	// Note: this is a pointer because omitempty doesn't work when time.IsZero()
 	Timestamp *time.Time `json:"time,omitempty"`
 }
 
-type expoQuantile struct {
+type quantile struct {
 	Q interface{} `json:"q"`
 	V interface{} `json:"v"`
+}
+
+type boundary struct {
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+}
+
+type bucket struct {
+	boundary `json:"bounds"`
+	Count    float64 `json:"count"`
+}
+
+type point struct {
+	Value interface{} `json:"value"`
 }
 
 // NewRawExporter creates a stdout Exporter for use in a pipeline.
@@ -174,62 +191,35 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 		instSet := label.NewSet(instLabels...)
 		encodedInstLabels := instSet.Encoded(e.config.LabelEncoder)
 
-		var expose expoLine
-
-		if sum, ok := agg.(aggregation.Sum); ok {
-			value, err := sum.Sum()
-			if err != nil {
-				return err
-			}
-			expose.Sum = value.AsInterface(kind)
+		var (
+			expose expoLine
+			err    error
+			p      = parser{e.config, kind}
+		)
+		switch t := agg.(type) {
+		case aggregation.Distribution:
+			expose.Quantiles, expose.Min, expose.Max, expose.Sum, expose.Count, err = p.Distribution(t)
+		case aggregation.Quantile:
+			expose.Quantiles, err = p.Quantile(t)
+		case aggregation.Histogram:
+			expose.Sum, expose.Histogram, err = p.Histogram(t)
+		case aggregation.MinMaxSumCount:
+			expose.Min, expose.Max, expose.Sum, expose.Count, err = p.MinMaxSumCount(t)
+		case aggregation.Min:
+			expose.Min, err = p.Min(t)
+		case aggregation.Max:
+			expose.Max, err = p.Max(t)
+		case aggregation.Sum:
+			expose.Sum, err = p.Sum(t)
+		case aggregation.Count:
+			expose.Count, err = p.Count(t)
+		case aggregation.Points:
+			expose.Points, err = p.Points(t)
+		case aggregation.LastValue:
+			expose.LastValue, expose.Timestamp, err = p.LastValue(t)
 		}
-
-		if mmsc, ok := agg.(aggregation.MinMaxSumCount); ok {
-			count, err := mmsc.Count()
-			if err != nil {
-				return err
-			}
-			expose.Count = count
-
-			max, err := mmsc.Max()
-			if err != nil {
-				return err
-			}
-			expose.Max = max.AsInterface(kind)
-
-			min, err := mmsc.Min()
-			if err != nil {
-				return err
-			}
-			expose.Min = min.AsInterface(kind)
-
-			if dist, ok := agg.(aggregation.Distribution); ok && len(e.config.Quantiles) != 0 {
-				summary := make([]expoQuantile, len(e.config.Quantiles))
-				expose.Quantiles = summary
-
-				for i, q := range e.config.Quantiles {
-					var vstr interface{}
-					value, err := dist.Quantile(q)
-					if err != nil {
-						return err
-					}
-					vstr = value.AsInterface(kind)
-					summary[i] = expoQuantile{
-						Q: q,
-						V: vstr,
-					}
-				}
-			}
-		} else if lv, ok := agg.(aggregation.LastValue); ok {
-			value, timestamp, err := lv.LastValue()
-			if err != nil {
-				return err
-			}
-			expose.LastValue = value.AsInterface(kind)
-
-			if !e.config.DoNotPrintTime {
-				expose.Timestamp = &timestamp
-			}
+		if err != nil {
+			return err
 		}
 
 		var encodedLabels string
@@ -277,4 +267,138 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 	}
 
 	return aggError
+}
+
+type parser struct {
+	Config Config
+	Kind   metric.NumberKind
+}
+
+func (p parser) nToI(n metric.Number, err error) (interface{}, error) {
+	if err != nil {
+		return nil, err
+	}
+	return n.AsInterface(p.Kind), nil
+}
+
+func (p parser) Min(m aggregation.Min) (interface{}, error) {
+	return p.nToI(m.Min())
+}
+
+func (p parser) Max(m aggregation.Max) (interface{}, error) {
+	return p.nToI(m.Max())
+}
+
+func (p parser) Sum(s aggregation.Sum) (interface{}, error) {
+	return p.nToI(s.Sum())
+}
+
+func (p parser) Count(c aggregation.Count) (interface{}, error) {
+	return c.Count()
+}
+
+func (p parser) MinMaxSumCount(mmsc aggregation.MinMaxSumCount) (interface{}, interface{}, interface{}, interface{}, error) {
+	min, err := p.Min(mmsc)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	max, err := p.Max(mmsc)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	sum, err := p.Sum(mmsc)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	count, err := p.Count(mmsc)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	return min, max, sum, count, nil
+}
+
+func (p parser) LastValue(l aggregation.LastValue) (interface{}, *time.Time, error) {
+	v, ts, err := l.LastValue()
+	if err != nil {
+		return nil, nil, err
+	}
+	iv := v.AsInterface(p.Kind)
+	if p.Config.DoNotPrintTime {
+		return iv, nil, nil
+	}
+	return iv, &ts, nil
+}
+
+func (p parser) Quantile(q aggregation.Quantile) ([]quantile, error) {
+	vals := make([]quantile, len(p.Config.Quantiles))
+	for i, n := range p.Config.Quantiles {
+		v, err := p.nToI(q.Quantile(n))
+		if err != nil {
+			return nil, err
+		}
+		vals[i] = quantile{Q: n, V: v}
+	}
+	return vals, nil
+}
+
+func (p parser) Distribution(d aggregation.Distribution) ([]quantile, interface{}, interface{}, interface{}, interface{}, error) {
+	min, max, sum, count, err := p.MinMaxSumCount(d)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	dist, err := p.Quantile(d)
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+	return dist, min, max, sum, count, nil
+}
+
+func (p parser) Histogram(h aggregation.Histogram) (interface{}, []bucket, error) {
+	sum, err := p.Sum(h)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	bkts, err := h.Histogram()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(bkts.Boundaries) != len(bkts.Counts)+1 {
+		return nil, nil, errors.New("histogram boundaries do not match counts")
+	}
+	hist := make([]bucket, 0, len(bkts.Boundaries)+1)
+	nextMin := math.Inf(-1)
+	for i, bound := range bkts.Boundaries {
+		b := bucket{}
+		b.Min, nextMin = nextMin, bound
+		b.Max = bound
+		if i == 0 {
+			b.Min = math.Inf(-1)
+		}
+		b.Count = bkts.Counts[i]
+		hist = append(hist, b)
+	}
+	hist = append(hist, bucket{
+		boundary: boundary{
+			Min: nextMin,
+			Max: math.Inf(1),
+		},
+		Count: bkts.Boundaries[len(bkts.Counts)-1],
+	})
+
+	return sum, hist, nil
+}
+
+func (p parser) Points(points aggregation.Points) ([]point, error) {
+	raws, err := points.Points()
+	if err != nil {
+		return nil, err
+	}
+	pts := make([]point, 0, len(raws))
+	for _, raw := range raws {
+		pts = append(pts, point{
+			Value: raw.AsInterface(p.Kind),
+		})
+	}
+	return pts, nil
 }
