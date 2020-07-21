@@ -76,7 +76,7 @@ func (fix testFixture) Export(checkpointSet export.CheckpointSet) {
 	}
 }
 
-func TestStdoutInvalidQuantile(t *testing.T) {
+func TestInvalidQuantile(t *testing.T) {
 	_, err := stdout.NewRawExporter(stdout.Config{
 		Quantiles: []float64{1.1, 0.9},
 	})
@@ -84,7 +84,7 @@ func TestStdoutInvalidQuantile(t *testing.T) {
 	require.Equal(t, aggregation.ErrInvalidQuantile, err)
 }
 
-func TestStdoutTimestamp(t *testing.T) {
+func TestTimestamp(t *testing.T) {
 	var buf bytes.Buffer
 	exporter, err := stdout.NewRawExporter(stdout.Config{
 		Writer:         &buf,
@@ -126,7 +126,13 @@ func TestStdoutTimestamp(t *testing.T) {
 		t.Fatal("JSON parse error: ", updateTS, ": ", err)
 	}
 
-	lastValueTS := printed["updates"].([]interface{})[0].(map[string]interface{})["time"].(string)
+	updates, ok := printed["updates"].([]interface{})
+	require.True(t, ok, "updates slice type")
+	require.Len(t, updates, 1)
+	update, ok := updates[0].(map[string]interface{})
+	require.True(t, ok, "updates item type")
+	require.Contains(t, update, "time")
+	lastValueTS := update["time"].(string)
 	lastValueTimestamp, err := time.Parse(time.RFC3339Nano, lastValueTS)
 	if err != nil {
 		t.Fatal("JSON parse error: ", lastValueTS, ": ", err)
@@ -141,7 +147,7 @@ func TestStdoutTimestamp(t *testing.T) {
 	require.True(t, lastValueTimestamp.Before(updateTimestamp))
 }
 
-func TestStdoutCounterFormat(t *testing.T) {
+func TestSum(t *testing.T) {
 	fix := newFixture(t, stdout.Config{})
 
 	checkpointSet := test.NewCheckpointSet(testResource)
@@ -160,7 +166,7 @@ func TestStdoutCounterFormat(t *testing.T) {
 	require.Equal(t, `{"updates":[{"name":"test.name{R=V,A=B,C=D}","sum":123}]}`, fix.Output())
 }
 
-func TestStdoutLastValueFormat(t *testing.T) {
+func TestLastValueFormat(t *testing.T) {
 	fix := newFixture(t, stdout.Config{})
 
 	checkpointSet := test.NewCheckpointSet(testResource)
@@ -178,7 +184,7 @@ func TestStdoutLastValueFormat(t *testing.T) {
 	require.Equal(t, `{"updates":[{"name":"test.name{R=V,A=B,C=D}","last":123.456}]}`, fix.Output())
 }
 
-func TestStdoutMinMaxSumCount(t *testing.T) {
+func TestMinMaxSumCount(t *testing.T) {
 	fix := newFixture(t, stdout.Config{})
 
 	checkpointSet := test.NewCheckpointSet(testResource)
@@ -198,7 +204,7 @@ func TestStdoutMinMaxSumCount(t *testing.T) {
 	require.Equal(t, `{"updates":[{"name":"test.name{R=V,A=B,C=D}","min":123.456,"max":876.543,"sum":999.999,"count":2}]}`, fix.Output())
 }
 
-func TestStdoutValueRecorderFormat(t *testing.T) {
+func TestValueRecorderFormat(t *testing.T) {
 	fix := newFixture(t, stdout.Config{
 		PrettyPrint: true,
 	})
@@ -245,7 +251,7 @@ func TestStdoutValueRecorderFormat(t *testing.T) {
 }`, fix.Output())
 }
 
-func TestStdoutNoData(t *testing.T) {
+func TestNoData(t *testing.T) {
 	desc := metric.NewDescriptor("test.name", metric.ValueRecorderKind, metric.Float64NumberKind)
 
 	runTwoAggs := func(agg, ckpt export.Aggregator) {
@@ -270,7 +276,7 @@ func TestStdoutNoData(t *testing.T) {
 	runTwoAggs(test.Unslice2(minmaxsumcount.New(2, &desc)))
 }
 
-func TestStdoutLastValueNotSet(t *testing.T) {
+func TestLastValueNotSet(t *testing.T) {
 	fix := newFixture(t, stdout.Config{})
 
 	checkpointSet := test.NewCheckpointSet(testResource)
@@ -287,7 +293,7 @@ func TestStdoutLastValueNotSet(t *testing.T) {
 	require.Equal(t, `{"updates":null}`, fix.Output())
 }
 
-func TestStdoutResource(t *testing.T) {
+func TestResource(t *testing.T) {
 	type testCase struct {
 		expect string
 		res    *resource.Resource
