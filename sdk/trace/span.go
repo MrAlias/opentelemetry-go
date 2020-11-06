@@ -63,12 +63,32 @@ type span struct {
 	//*spanStore
 	endOnce sync.Once
 
+	// done is the completion state of the span. Use the ended method to check
+	// this in a concurrently safe manner.
+	done bool
+	// doneMu protects the done field.
+	doneMu sync.RWMutex
+
 	executionTracerTaskEnd func()  // ends the execution tracer span
 	tracer                 *tracer // tracer used to create span.
 }
 
 var _ otel.Span = &span{}
 
+// ended returns if s has ended and should not be updated.
+func (s *span) ended() bool {
+	s.doneMu.RLock()
+	defer s.doneMu.RUnlock()
+	return s.done
+}
+
+// ignoreUpdates returns if updates to the span should be ignored.
+func (s *span) ignoreUpdates() bool {
+	return !s.IsRecording() || s.ended()
+}
+
+// SpanContext returns the SpanContext of s. The returned SpanContext is
+// usable even after End has been called for s.
 func (s *span) SpanContext() otel.SpanContext {
 	if s == nil {
 		return otel.SpanContext{}
@@ -76,18 +96,17 @@ func (s *span) SpanContext() otel.SpanContext {
 	return s.spanContext
 }
 
+// IsRecording returns the recording state of s. It will return true if s is
+// active and events can be recorded.
 func (s *span) IsRecording() bool {
-	if s == nil {
-		return false
-	}
-	return s.data != nil
+	return s != nil && s.data != nil
 }
 
+// SetStatus sets the status of s with code and msg. Any previous status s had
+// will be overwritten. If s is not recording or is ended the status of s will
+// not be updated and this method will perform no operation.
 func (s *span) SetStatus(code codes.Code, msg string) {
-	if s == nil {
-		return
-	}
-	if !s.IsRecording() {
+	if s.ignoreUpdates() {
 		return
 	}
 	s.mu.Lock()
@@ -96,8 +115,13 @@ func (s *span) SetStatus(code codes.Code, msg string) {
 	s.mu.Unlock()
 }
 
+// SetAttributes sets attributes as attributes of s. If a key from attributes
+// already exists for an attribute of s it will be overwritten with the value
+// contained in the passed attributes. If s is not recording or is ended the
+// attributes of s will not be updated and this method will perform no
+// operation.
 func (s *span) SetAttributes(attributes ...label.KeyValue) {
-	if !s.IsRecording() {
+	if s.ignoreUpdates() {
 		return
 	}
 	s.copyToCappedAttributes(attributes...)
@@ -115,44 +139,54 @@ func (s *span) End(options ...otel.SpanOption) {
 		return
 	}
 
-	if recovered := recover(); recovered != nil {
-		// Record but don't stop the panic.
+	recovered := recover()
+	if recovered != nil {
+		// Record but do not stop the panic.
 		defer panic(recovered)
-		s.addEvent(
-			errorEventName,
-			otel.WithAttributes(
-				errorTypeKey.String(typeStr(recovered)),
-				errorMessageKey.String(fmt.Sprint(recovered)),
-			),
-		)
 	}
 
-	if s.executionTracerTaskEnd != nil {
-		s.executionTracerTaskEnd()
-	}
-	if !s.IsRecording() {
-		return
-	}
-	config := otel.NewSpanConfig(options...)
 	s.endOnce.Do(func() {
+		// Ensure s is considered ended and calls to update s are ignored
+		// before the SpanData is finalized.
+		s.doneMu.Lock()
+		s.done = true
+		s.doneMu.Unlock()
+
+		// End the execution tracer regardless of s recording or not.
+		if s.executionTracerTaskEnd != nil {
+			s.executionTracerTaskEnd()
+		}
+
+		// If s is not recording no need to add events or process.
+		if !s.IsRecording() {
+			return
+		}
+
+		// Ensure there is a processing destination before we finalize.
 		sps, ok := s.tracer.provider.spanProcessors.Load().(spanProcessorStates)
-		mustExportOrProcess := ok && len(sps) > 0
-		if mustExportOrProcess {
-			sd := s.makeSpanData()
-			if config.Timestamp.IsZero() {
-				sd.EndTime = internal.MonotonicEndTime(sd.StartTime)
-			} else {
-				sd.EndTime = config.Timestamp
-			}
-			for _, sp := range sps {
-				sp.sp.OnEnd(sd)
-			}
+		if !ok || len(sps) < 1 {
+			return
+		}
+
+		if recovered != nil {
+			s.addEvent(errorEventName, otel.WithAttributes(
+				errorTypeKey.String(typeStr(recovered)),
+				errorMessageKey.String(fmt.Sprint(recovered)),
+			))
+		}
+
+		sd := s.finalSpanData(options)
+		for _, sp := range sps {
+			sp.sp.OnEnd(sd)
 		}
 	})
 }
 
+// RecordError records err as a Span event with the provided options. If s is
+// not recording or is ended this method performs no operation and no event is
+// added.
 func (s *span) RecordError(err error, opts ...otel.EventOption) {
-	if s == nil || err == nil || !s.IsRecording() {
+	if err == nil || s.ignoreUpdates() {
 		return
 	}
 
@@ -173,12 +207,16 @@ func typeStr(i interface{}) string {
 	return fmt.Sprintf("%s.%s", t.PkgPath(), t.Name())
 }
 
+// Tracer returns the Tracer that created s.
 func (s *span) Tracer() otel.Tracer {
 	return s.tracer
 }
 
+// AddEvent adds an event with the provided name and options. If s is not
+// recording or is ended this method performs no operation and no event is
+// added.
 func (s *span) AddEvent(name string, o ...otel.EventOption) {
-	if !s.IsRecording() {
+	if s.ignoreUpdates() {
 		return
 	}
 	s.addEvent(name, o...)
@@ -198,7 +236,13 @@ func (s *span) addEvent(name string, o ...otel.EventOption) {
 
 var errUninitializedSpan = errors.New("failed to set name on uninitialized span")
 
+// SetName sets the name of s. If s is not recording or is ended this method
+// performs no operation and the name of s will not be updated.
 func (s *span) SetName(name string) {
+	if s == nil || s.ended() {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -237,8 +281,10 @@ func (s *span) SetName(name string) {
 	}
 }
 
+// addLink adds a span link with to s. If s is not recording or is ended this
+// method performs no operation and no link is added.
 func (s *span) addLink(link otel.Link) {
-	if !s.IsRecording() {
+	if s.ignoreUpdates() {
 		return
 	}
 	s.mu.Lock()
@@ -246,9 +292,9 @@ func (s *span) addLink(link otel.Link) {
 	s.links.add(link)
 }
 
-// makeSpanData produces a SpanData representing the current state of the span.
-// It requires that s.data is non-nil.
-func (s *span) makeSpanData() *export.SpanData {
+// finalSpanData produces SpanData representing the finalized state of the
+// span. It requires that s.data is non-nil.
+func (s *span) finalSpanData(opts []otel.SpanOption) *export.SpanData {
 	var sd export.SpanData
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -264,6 +310,14 @@ func (s *span) makeSpanData() *export.SpanData {
 		sd.Links = s.interfaceArrayToLinksArray()
 		sd.DroppedLinkCount = s.links.droppedCount
 	}
+
+	config := otel.NewSpanConfig(opts...)
+	if config.Timestamp.IsZero() {
+		sd.EndTime = internal.MonotonicEndTime(sd.StartTime)
+	} else {
+		sd.EndTime = config.Timestamp
+	}
+
 	return &sd
 }
 
@@ -293,8 +347,11 @@ func (s *span) copyToCappedAttributes(attributes ...label.KeyValue) {
 	}
 }
 
+// addChild increments the child span count of s. If s is not recording or is
+// ended this method performs no operation and no additional child spans will
+// be counted.
 func (s *span) addChild() {
-	if !s.IsRecording() {
+	if s.ignoreUpdates() {
 		return
 	}
 	s.mu.Lock()
