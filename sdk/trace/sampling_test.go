@@ -15,12 +15,14 @@
 package trace
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	"go.opentelemetry.io/otel/label"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -168,7 +170,7 @@ func TestTraceIdRatioSamplesInclusively(t *testing.T) {
 		numSamplers = 1000
 		numTraces   = 100
 	)
-	idg := defIDGenerator()
+	idg := defaultIDGenerator()
 
 	for i := 0; i < numSamplers; i++ {
 		ratioLo, ratioHi := rand.Float64(), rand.Float64()
@@ -178,7 +180,7 @@ func TestTraceIdRatioSamplesInclusively(t *testing.T) {
 		samplerHi := TraceIDRatioBased(ratioHi)
 		samplerLo := TraceIDRatioBased(ratioLo)
 		for j := 0; j < numTraces; j++ {
-			traceID := idg.NewTraceID()
+			traceID, _ := idg.NewIDs(context.Background())
 
 			params := SamplingParameters{TraceID: traceID}
 			if samplerLo.ShouldSample(params).Decision == RecordAndSample {
@@ -186,5 +188,49 @@ func TestTraceIdRatioSamplesInclusively(t *testing.T) {
 					"%s sampled but %s did not", samplerLo.Description(), samplerHi.Description())
 			}
 		}
+	}
+}
+
+func TestTracestateIsPassed(t *testing.T) {
+	testCases := []struct {
+		name    string
+		sampler Sampler
+	}{
+		{
+			"notSampled",
+			NeverSample(),
+		},
+		{
+			"sampled",
+			AlwaysSample(),
+		},
+		{
+			"parentSampled",
+			ParentBased(AlwaysSample()),
+		},
+		{
+			"parentNotSampled",
+			ParentBased(NeverSample()),
+		},
+		{
+			"traceIDRatioSampler",
+			TraceIDRatioBased(.5),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			traceState, err := trace.TraceStateFromKeyValues(label.String("k", "v"))
+			if err != nil {
+				t.Error(err)
+			}
+
+			parentCtx := trace.SpanContext{
+				TraceState: traceState,
+			}
+			params := SamplingParameters{ParentContext: parentCtx}
+
+			require.Equal(t, traceState, tc.sampler.ShouldSample(params).Tracestate, "TraceState is not equal")
+		})
 	}
 }

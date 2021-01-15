@@ -218,7 +218,7 @@ func (e *Exporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpa
 		return nil
 	}
 
-	for _, span := range spans {
+	for _, span := range ss {
 		// TODO(jbd): Handle oversized bundlers.
 		err := e.bundler.Add(spanSnapshotToThrift(span), 1)
 		if err != nil {

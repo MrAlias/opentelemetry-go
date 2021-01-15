@@ -24,7 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	ottest "go.opentelemetry.io/otel/internal/testing"
+	ottest "go.opentelemetry.io/otel/internal/internaltest"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/number"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
@@ -131,4 +131,14 @@ func TestLastValueNotSet(t *testing.T) {
 	require.NoError(t, g.SynchronizedMove(ckpt, descriptor))
 
 	checkZero(t, g)
+}
+
+func TestSynchronizedMoveReset(t *testing.T) {
+	aggregatortest.SynchronizedMoveResetTest(
+		t,
+		metric.ValueObserverInstrumentKind,
+		func(desc *metric.Descriptor) export.Aggregator {
+			return &New(1)[0]
+		},
+	)
 }

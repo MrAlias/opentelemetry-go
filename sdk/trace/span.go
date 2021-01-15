@@ -15,6 +15,7 @@
 package trace // import "go.opentelemetry.io/otel/sdk/trace"
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -49,7 +50,7 @@ type ReadOnlySpan interface {
 	EndTime() time.Time
 	Attributes() []label.KeyValue
 	Links() []trace.Link
-	Events() []Event
+	Events() []trace.Event
 	StatusCode() codes.Code
 	StatusMessage() string
 	Tracer() trace.Tracer
@@ -267,7 +268,7 @@ func (s *span) addEvent(name string, o ...trace.EventOption) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.messageEvents.add(Event{
+	s.messageEvents.add(trace.Event{
 		Name:       name,
 		Attributes: c.Attributes,
 		Time:       c.Timestamp,
@@ -356,11 +357,11 @@ func (s *span) Links() []trace.Link {
 	return s.interfaceArrayToLinksArray()
 }
 
-func (s *span) Events() []Event {
+func (s *span) Events() []trace.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.messageEvents.queue) == 0 {
-		return []Event{}
+		return []trace.Event{}
 	}
 	return s.interfaceArrayToMessageEventArray()
 }
@@ -461,10 +462,10 @@ func (s *span) interfaceArrayToLinksArray() []trace.Link {
 	return linkArr
 }
 
-func (s *span) interfaceArrayToMessageEventArray() []Event {
-	messageEventArr := make([]Event, 0)
+func (s *span) interfaceArrayToMessageEventArray() []trace.Event {
+	messageEventArr := make([]trace.Event, 0)
 	for _, value := range s.messageEvents.queue {
-		messageEventArr = append(messageEventArr, value.(Event))
+		messageEventArr = append(messageEventArr, value.(trace.Event))
 	}
 	return messageEventArr
 }
@@ -488,23 +489,26 @@ func (s *span) addChild() {
 	s.mu.Unlock()
 }
 
-func startSpanInternal(tr *tracer, name string, parent trace.SpanContext, remoteParent bool, o *trace.SpanConfig) *span {
+func startSpanInternal(ctx context.Context, tr *tracer, name string, parent trace.SpanContext, remoteParent bool, o *trace.SpanConfig) *span {
 	span := &span{}
 	span.spanContext = parent
 
 	cfg := tr.provider.config.Load().(*Config)
 
-	if parent == emptySpanContext {
-		span.spanContext.TraceID = cfg.IDGenerator.NewTraceID()
+	if hasEmptySpanContext(parent) {
+		// Generate both TraceID and SpanID
+		span.spanContext.TraceID, span.spanContext.SpanID = cfg.IDGenerator.NewIDs(ctx)
+	} else {
+		// TraceID already exists, just generate a SpanID
+		span.spanContext.SpanID = cfg.IDGenerator.NewSpanID(ctx, parent.TraceID)
 	}
-	span.spanContext.SpanID = cfg.IDGenerator.NewSpanID()
 
 	span.attributes = newAttributesMap(cfg.MaxAttributesPerSpan)
 	span.messageEvents = newEvictedQueue(cfg.MaxEventsPerSpan)
 	span.links = newEvictedQueue(cfg.MaxLinksPerSpan)
 
 	data := samplingData{
-		noParent:     parent == emptySpanContext,
+		noParent:     hasEmptySpanContext(parent),
 		remoteParent: remoteParent,
 		parent:       parent,
 		name:         name,
@@ -537,6 +541,13 @@ func startSpanInternal(tr *tracer, name string, parent trace.SpanContext, remote
 	span.parent = parent
 
 	return span
+}
+
+func hasEmptySpanContext(parent trace.SpanContext) bool {
+	return parent.SpanID == emptySpanContext.SpanID &&
+		parent.TraceID == emptySpanContext.TraceID &&
+		parent.TraceFlags == emptySpanContext.TraceFlags &&
+		parent.TraceState.IsEmpty()
 }
 
 type samplingData struct {

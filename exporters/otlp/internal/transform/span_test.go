@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/otel/codes"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
 func TestSpanKind(t *testing.T) {
@@ -68,13 +67,13 @@ func TestNilSpanEvent(t *testing.T) {
 }
 
 func TestEmptySpanEvent(t *testing.T) {
-	assert.Nil(t, spanEvents([]sdktrace.Event{}))
+	assert.Nil(t, spanEvents([]trace.Event{}))
 }
 
 func TestSpanEvent(t *testing.T) {
 	attrs := []label.KeyValue{label.Int("one", 1), label.Int("two", 2)}
 	eventTime := time.Date(2020, 5, 20, 0, 0, 0, 0, time.UTC)
-	got := spanEvents([]sdktrace.Event{
+	got := spanEvents([]trace.Event{
 		{
 			Name:       "test 1",
 			Attributes: []label.KeyValue{},
@@ -96,9 +95,9 @@ func TestSpanEvent(t *testing.T) {
 }
 
 func TestExcessiveSpanEvents(t *testing.T) {
-	e := make([]sdktrace.Event, maxMessageEventsPerSpan+1)
+	e := make([]trace.Event, maxMessageEventsPerSpan+1)
 	for i := 0; i < maxMessageEventsPerSpan+1; i++ {
-		e[i] = sdktrace.Event{Name: strconv.Itoa(i)}
+		e[i] = trace.Event{Name: strconv.Itoa(i)}
 	}
 	assert.Len(t, e, maxMessageEventsPerSpan+1)
 	got := spanEvents(e)

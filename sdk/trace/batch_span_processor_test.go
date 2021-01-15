@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"go.opentelemetry.io/otel/trace"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -43,7 +45,10 @@ func (t *testBatchExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 	return nil
 }
 
-func (t *testBatchExporter) Shutdown(context.Context) error { return nil }
+func (t *testBatchExporter) Shutdown(context.Context) error {
+	t.shutdownCount++
+	return nil
+}
 
 func (t *testBatchExporter) len() int {
 	t.mu.Lock()
@@ -230,16 +235,19 @@ func getSpanContext() trace.SpanContext {
 }
 
 func TestBatchSpanProcessorShutdown(t *testing.T) {
-	bsp := sdktrace.NewBatchSpanProcessor(&testBatchExporter{})
+	var bp testBatchExporter
+	bsp := sdktrace.NewBatchSpanProcessor(&bp)
 
 	err := bsp.Shutdown(context.Background())
 	if err != nil {
 		t.Error("Error shutting the BatchSpanProcessor down\n")
 	}
+	assert.Equal(t, 1, bp.shutdownCount, "shutdown from span exporter not called")
 
 	// Multiple call to Shutdown() should not panic.
 	err = bsp.Shutdown(context.Background())
 	if err != nil {
 		t.Error("Error shutting the BatchSpanProcessor down\n")
 	}
+	assert.Equal(t, 1, bp.shutdownCount)
 }
