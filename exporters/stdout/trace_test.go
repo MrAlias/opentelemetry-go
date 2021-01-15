@@ -42,14 +42,16 @@ func TestExporter_ExportSpan(t *testing.T) {
 	now := time.Now()
 	traceID, _ := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
 	spanID, _ := trace.SpanIDFromHex("0102030405060708")
+	traceState, _ := trace.TraceStateFromKeyValues(label.String("key", "val"))
 	keyValue := "value"
 	doubleValue := 123.456
 	resource := resource.NewWithAttributes(label.String("rk1", "rv11"))
 
 	testSpan := &export.SpanSnapshot{
 		SpanContext: trace.SpanContext{
-			TraceID: traceID,
-			SpanID:  spanID,
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceState: traceState,
 		},
 		Name:      "/foo",
 		StartTime: now,
@@ -58,7 +60,7 @@ func TestExporter_ExportSpan(t *testing.T) {
 			label.String("key", keyValue),
 			label.Float64("double", doubleValue),
 		},
-		MessageEvents: []export.Event{
+		MessageEvents: []trace.Event{
 			{Name: "foo", Attributes: []label.KeyValue{label.String("key", keyValue)}, Time: now},
 			{Name: "bar", Attributes: []label.KeyValue{label.Float64("double", doubleValue)}, Time: now},
 		},
@@ -76,7 +78,12 @@ func TestExporter_ExportSpan(t *testing.T) {
 	got := b.String()
 	expectedOutput := `[{"SpanContext":{` +
 		`"TraceID":"0102030405060708090a0b0c0d0e0f10",` +
-		`"SpanID":"0102030405060708","TraceFlags":0},` +
+		`"SpanID":"0102030405060708","TraceFlags":0,` +
+		`"TraceState":[` +
+		`{` +
+		`"Key":"key",` +
+		`"Value":{"Type":"STRING","Value":"val"}` +
+		`}]},` +
 		`"ParentSpanID":"0000000000000000",` +
 		`"SpanKind":1,` +
 		`"Name":"/foo",` +

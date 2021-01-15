@@ -102,17 +102,17 @@ func span(sd *export.SpanSnapshot) *tracepb.Span {
 	}
 
 	s := &tracepb.Span{
-		TraceId:           sd.SpanContext.TraceID[:],
-		SpanId:            sd.SpanContext.SpanID[:],
-		Status:            status(sd.StatusCode, sd.StatusMessage),
-		StartTimeUnixNano: uint64(sd.StartTime.UnixNano()),
-		EndTimeUnixNano:   uint64(sd.EndTime.UnixNano()),
-		Links:             links(sd.Links),
-		Kind:              spanKind(sd.SpanKind),
-		Name:              sd.Name,
-		Attributes:        Attributes(sd.Attributes),
-		Events:            spanEvents(sd.MessageEvents),
-		// TODO (rghetia): Add Tracestate: when supported.
+		TraceId:                sd.SpanContext.TraceID[:],
+		SpanId:                 sd.SpanContext.SpanID[:],
+		TraceState:             sd.SpanContext.TraceState.String(),
+		Status:                 status(sd.StatusCode, sd.StatusMessage),
+		StartTimeUnixNano:      uint64(sd.StartTime.UnixNano()),
+		EndTimeUnixNano:        uint64(sd.EndTime.UnixNano()),
+		Links:                  links(sd.Links),
+		Kind:                   spanKind(sd.SpanKind),
+		Name:                   sd.Name,
+		Attributes:             Attributes(sd.Attributes),
+		Events:                 spanEvents(sd.MessageEvents),
 		DroppedAttributesCount: uint32(sd.DroppedAttributeCount),
 		DroppedEventsCount:     uint32(sd.DroppedMessageEventCount),
 		DroppedLinksCount:      uint32(sd.DroppedLinkCount),
@@ -162,7 +162,7 @@ func links(links []trace.Link) []*tracepb.Span_Link {
 }
 
 // spanEvents transforms span Events to an OTLP span events.
-func spanEvents(es []export.Event) []*tracepb.Span_Event {
+func spanEvents(es []trace.Event) []*tracepb.Span_Event {
 	if len(es) == 0 {
 		return nil
 	}

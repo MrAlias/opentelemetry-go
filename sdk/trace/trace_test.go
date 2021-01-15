@@ -35,26 +35,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ottest "go.opentelemetry.io/otel/internal/testing"
+	ottest "go.opentelemetry.io/otel/internal/internaltest"
 	export "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
+type storingHandler struct {
+	errs []error
+}
+
+func (s *storingHandler) Handle(err error) {
+	s.errs = append(s.errs, err)
+}
+
+func (s *storingHandler) Reset() {
+	s.errs = nil
+}
+
 var (
 	tid trace.TraceID
 	sid trace.SpanID
+
+	handler *storingHandler = &storingHandler{}
 )
-
-type discardHandler struct{}
-
-func (*discardHandler) Handle(_ error) {}
 
 func init() {
 	tid, _ = trace.TraceIDFromHex("01020304050607080102040810203040")
 	sid, _ = trace.SpanIDFromHex("0102040810203040")
 
-	otel.SetErrorHandler(new(discardHandler))
+	otel.SetErrorHandler(handler)
 }
 
 func TestTracerFollowsExpectedAPIBehaviour(t *testing.T) {
@@ -306,34 +316,38 @@ func TestStartSpanWithParent(t *testing.T) {
 		TraceFlags: 0x1,
 	}
 	_, s1 := tr.Start(trace.ContextWithRemoteSpanContext(ctx, sc1), "span1-unsampled-parent1")
-	if err := checkChild(sc1, s1); err != nil {
+	if err := checkChild(t, sc1, s1); err != nil {
 		t.Error(err)
 	}
 
 	_, s2 := tr.Start(trace.ContextWithRemoteSpanContext(ctx, sc1), "span2-unsampled-parent1")
-	if err := checkChild(sc1, s2); err != nil {
+	if err := checkChild(t, sc1, s2); err != nil {
 		t.Error(err)
 	}
 
+	ts, err := trace.TraceStateFromKeyValues(label.String("k", "v"))
+	if err != nil {
+		t.Error(err)
+	}
 	sc2 := trace.SpanContext{
 		TraceID:    tid,
 		SpanID:     sid,
 		TraceFlags: 0x1,
-		//Tracestate:   testTracestate,
+		TraceState: ts,
 	}
 	_, s3 := tr.Start(trace.ContextWithRemoteSpanContext(ctx, sc2), "span3-sampled-parent2")
-	if err := checkChild(sc2, s3); err != nil {
+	if err := checkChild(t, sc2, s3); err != nil {
 		t.Error(err)
 	}
 
 	ctx2, s4 := tr.Start(trace.ContextWithRemoteSpanContext(ctx, sc2), "span4-sampled-parent2")
-	if err := checkChild(sc2, s4); err != nil {
+	if err := checkChild(t, sc2, s4); err != nil {
 		t.Error(err)
 	}
 
 	s4Sc := s4.SpanContext()
 	_, s5 := tr.Start(ctx2, "span5-implicit-childof-span4")
-	if err := checkChild(s4Sc, s5); err != nil {
+	if err := checkChild(t, s4Sc, s5); err != nil {
 		t.Error(err)
 	}
 }
@@ -537,7 +551,7 @@ func TestEvents(t *testing.T) {
 		ParentSpanID:    sid,
 		Name:            "span0",
 		HasRemoteParent: true,
-		MessageEvents: []export.Event{
+		MessageEvents: []trace.Event{
 			{Name: "foo", Attributes: []label.KeyValue{k1v1}},
 			{Name: "bar", Attributes: []label.KeyValue{k2v2, k3v3}},
 		},
@@ -587,7 +601,7 @@ func TestEventsOverLimit(t *testing.T) {
 		},
 		ParentSpanID: sid,
 		Name:         "span0",
-		MessageEvents: []export.Event{
+		MessageEvents: []trace.Event{
 			{Name: "foo", Attributes: []label.KeyValue{k1v1}},
 			{Name: "bar", Attributes: []label.KeyValue{k2v2, k3v3}},
 		},
@@ -741,7 +755,8 @@ func TestSetSpanStatus(t *testing.T) {
 func cmpDiff(x, y interface{}) string {
 	return cmp.Diff(x, y,
 		cmp.AllowUnexported(label.Value{}),
-		cmp.AllowUnexported(export.Event{}))
+		cmp.AllowUnexported(trace.Event{}),
+		cmp.AllowUnexported(trace.TraceState{}))
 }
 
 func remoteSpanContext() trace.SpanContext {
@@ -754,7 +769,7 @@ func remoteSpanContext() trace.SpanContext {
 
 // checkChild is test utility function that tests that c has fields set appropriately,
 // given that it is a child span of p.
-func checkChild(p trace.SpanContext, apiSpan trace.Span) error {
+func checkChild(t *testing.T, p trace.SpanContext, apiSpan trace.Span) error {
 	s := apiSpan.(*span)
 	if s == nil {
 		return fmt.Errorf("got nil child span, want non-nil")
@@ -768,10 +783,8 @@ func checkChild(p trace.SpanContext, apiSpan trace.Span) error {
 	if got, want := s.spanContext.TraceFlags, p.TraceFlags; got != want {
 		return fmt.Errorf("got child trace options %d, want %d", got, want)
 	}
-	// TODO [rgheita] : Fix tracestate test
-	//if got, want := c.spanContext.Tracestate, p.Tracestate; got != want {
-	//	return fmt.Errorf("got child tracestate %v, want %v", got, want)
-	//}
+	got, want := s.spanContext.TraceState, p.TraceState
+	assert.Equal(t, want, got)
 	return nil
 }
 
@@ -1058,7 +1071,7 @@ func TestRecordError(t *testing.T) {
 	}{
 		{
 			err: ottest.NewTestError("test error"),
-			typ: "go.opentelemetry.io/otel/internal/testing.TestError",
+			typ: "go.opentelemetry.io/otel/internal/internaltest.TestError",
 			msg: "test error",
 		},
 		{
@@ -1091,7 +1104,7 @@ func TestRecordError(t *testing.T) {
 			StatusCode:      codes.Error,
 			SpanKind:        trace.SpanKindInternal,
 			HasRemoteParent: true,
-			MessageEvents: []export.Event{
+			MessageEvents: []trace.Event{
 				{
 					Name: errorEventName,
 					Time: errTime,
