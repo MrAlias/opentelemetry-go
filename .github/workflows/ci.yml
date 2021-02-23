@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+      # FIXME: remove
+      - compatibility-test-2
   pull_request:
 env:
   # Path to where test results will be saved.
