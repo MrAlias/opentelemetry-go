@@ -67,6 +67,9 @@ type (
 
 		// resource is applied to all records in this Accumulator.
 		resource *resource.Resource
+
+		// errorHandler handles any unrecoverable errors.
+		errorHandler otel.ErrorHandler
 	}
 
 	syncInstrument struct {
@@ -301,11 +304,15 @@ func (s *syncInstrument) RecordOne(ctx context.Context, num number.Number, kvs [
 // processor will call Collect() when it receives a request to scrape
 // current metric values.  A push-based processor should configure its
 // own periodic collection.
-func NewAccumulator(processor export.Processor, resource *resource.Resource) *Accumulator {
+func NewAccumulator(processor export.Processor, resource *resource.Resource, eh otel.ErrorHandler) *Accumulator {
+	if eh == nil {
+		eh = otel.GetErrorHandler()
+	}
 	return &Accumulator{
 		processor:        processor,
 		asyncInstruments: internal.NewAsyncInstrumentState(),
 		resource:         resource,
+		errorHandler:     eh,
 	}
 }
 

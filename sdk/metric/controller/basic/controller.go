@@ -64,6 +64,7 @@ type Controller struct {
 	stopCh       chan struct{}
 	clock        controllerTime.Clock
 	ticker       controllerTime.Ticker
+	errorHandler otel.ErrorHandler
 
 	collectPeriod  time.Duration
 	collectTimeout time.Duration
@@ -89,10 +90,14 @@ func New(checkpointer export.Checkpointer, opts ...Option) *Controller {
 	if c.Resource == nil {
 		c.Resource = resource.Default()
 	}
+	if c.ErrorHandler == nil {
+		c.ErrorHandler = otel.GetErrorHandler()
+	}
 
 	impl := sdk.NewAccumulator(
 		checkpointer,
 		c.Resource,
+		c.ErrorHandler,
 	)
 	return &Controller{
 		provider:     registry.NewMeterProvider(impl),
@@ -101,6 +106,7 @@ func New(checkpointer export.Checkpointer, opts ...Option) *Controller {
 		pusher:       c.Pusher,
 		stopCh:       nil,
 		clock:        controllerTime.RealClock{},
+		errorHandler: c.ErrorHandler,
 
 		collectPeriod:  c.CollectPeriod,
 		collectTimeout: c.CollectTimeout,
@@ -180,7 +186,7 @@ func (c *Controller) runTicker(ctx context.Context, stopCh chan struct{}) {
 			return
 		case <-c.ticker.C():
 			if err := c.collect(ctx); err != nil {
-				otel.Handle(err)
+				c.errorHandler.Handle(err)
 			}
 		}
 	}

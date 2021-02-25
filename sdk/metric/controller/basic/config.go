@@ -17,6 +17,7 @@ package basic // import "go.opentelemetry.io/otel/sdk/metric/controller/basic"
 import (
 	"time"
 
+	"go.opentelemetry.io/otel"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -56,6 +57,12 @@ type Config struct {
 	//
 	// Default value is 10s.  If zero, no Export timeout is applied.
 	PushTimeout time.Duration
+
+	// ErrorHandler is the ErrorHandler a controller will use to handle any
+	// unrecoverable errors encountered.
+	//
+	// Default is to use the global ErrorHandler.
+	ErrorHandler otel.ErrorHandler
 }
 
 // Option is the interface that applies the value to a configuration option.
@@ -117,4 +124,17 @@ type pushTimeoutOption time.Duration
 
 func (o pushTimeoutOption) Apply(config *Config) {
 	config.PushTimeout = time.Duration(o)
+}
+
+// WithErrorHandler sets the ErrorHandler configuration option of a Config.
+func WithErrorHandler(eh otel.ErrorHandler) Option {
+	return errorHandlerOption{eh}
+}
+
+type errorHandlerOption struct {
+	eh otel.ErrorHandler
+}
+
+func (o errorHandlerOption) Apply(config *Config) {
+	config.ErrorHandler = o.eh
 }

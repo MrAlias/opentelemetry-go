@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -242,94 +243,128 @@ func TestObserverContext(t *testing.T) {
 	require.EqualValues(t, expect, getMap(t, cont))
 }
 
-type blockingExporter struct {
-	calls    int
-	exporter *processortest.Exporter
+type assertDeadlineExporter struct {
+	t       *testing.T
+	timeout time.Duration
+	signal  chan struct{}
 }
 
-func newBlockingExporter() *blockingExporter {
-	return &blockingExporter{
-		exporter: processortest.NewExporter(
-			export.CumulativeExportKindSelector(),
-			attribute.DefaultEncoder(),
-		),
+func newAssertDeadlineExporter(t *testing.T, timeout time.Duration, signal chan struct{}) *assertDeadlineExporter {
+	return &assertDeadlineExporter{
+		t:       t,
+		timeout: timeout,
+		signal:  signal,
 	}
 }
 
-func (b *blockingExporter) Export(ctx context.Context, output export.CheckpointSet) error {
-	var err error
-	_ = b.exporter.Export(ctx, output)
-	if b.calls == 0 {
-		// timeout once
-		<-ctx.Done()
-		err = ctx.Err()
-	}
-	b.calls++
-	return err
+func (e *assertDeadlineExporter) Export(ctx context.Context, cs export.CheckpointSet) error {
+	d, ok := ctx.Deadline()
+	assert.True(e.t, ok)
+
+	expire := time.Now().Add(e.timeout)
+	assert.True(e.t, expire.After(d), "%s !< %s", d.String(), expire.String())
+
+	e.signal <- struct{}{}
+	return nil
 }
 
-func (*blockingExporter) ExportKindFor(
-	*metric.Descriptor,
-	aggregation.Kind,
-) export.ExportKind {
+func (*assertDeadlineExporter) ExportKindFor(*metric.Descriptor, aggregation.Kind) export.ExportKind {
 	return export.CumulativeExportKind
 }
 
 func TestExportTimeout(t *testing.T) {
-	exporter := newBlockingExporter()
+	timeout := time.Second
+	signal := make(chan struct{})
+	exporter := newAssertDeadlineExporter(t, timeout, signal)
 	cont := controller.New(
 		processor.New(
 			processortest.AggregatorSelector(),
 			export.CumulativeExportKindSelector(),
 		),
 		controller.WithCollectPeriod(time.Second),
-		controller.WithPushTimeout(time.Millisecond),
+		controller.WithCollectTimeout(timeout),
+		controller.WithPushTimeout(timeout),
+		controller.WithPusher(exporter),
+		controller.WithResource(resource.Empty()),
+	)
+
+	mock := controllertest.NewMockClock()
+	cont.SetClock(mock)
+
+	_ = metric.Must(cont.MeterProvider().Meter(
+		"named",
+	)).NewInt64SumObserver("one.lastvalue",
+		func(ctx context.Context, result metric.Int64ObserverResult) {
+			result.Observe(1)
+		},
+	)
+	require.NoError(t, cont.Start(context.Background()))
+	// Start a collection by incrementing the controller clock 1 second.
+	mock.Add(time.Second)
+	// Wait 2 times the collection timeout to ensure the export is attempted.
+	select {
+	case <-time.Tick(2 * timeout):
+		t.Error("Export not called within Collection and Push timeouts")
+	case <-signal:
+		// Export successful.
+	}
+}
+
+type noOpExporter struct{}
+
+func (noOpExporter) Export(context.Context, export.CheckpointSet) error {
+	return nil
+}
+
+func (noOpExporter) ExportKindFor(*metric.Descriptor, aggregation.Kind) export.ExportKind {
+	return export.CumulativeExportKind
+}
+
+func TestAccumulationTimeout(t *testing.T) {
+	exporter := noOpExporter{}
+	cont := controller.New(
+		processor.New(
+			processortest.AggregatorSelector(),
+			export.CumulativeExportKindSelector(),
+		),
+		controller.WithCollectPeriod(time.Second),
+		// Any accumulation that takes longer than this time will result in a
+		// collection receiving a context.DeadlineExceeded error.
+		controller.WithCollectTimeout(time.Nanosecond),
 		controller.WithPusher(exporter),
 		controller.WithResource(resource.Empty()),
 	)
 	mock := controllertest.NewMockClock()
 	cont.SetClock(mock)
 
+	// Ensure the callback is run.
+	done := make(chan struct{})
 	prov := cont.MeterProvider()
-
-	calls := int64(0)
 	_ = metric.Must(prov.Meter("named")).NewInt64SumObserver("one.lastvalue",
 		func(ctx context.Context, result metric.Int64ObserverResult) {
-			calls++
-			result.Observe(calls)
+			// Ensure this takes longer than the push timeout so the
+			// collection will fail with context.DeadlineExceeded.
+			d, ok := ctx.Deadline()
+			assert.True(t, ok)
+
+			// The default collection timeout is 10 seconds, this deadline
+			// should have passed if it is being set correctly.
+			expire := time.Now().Add(time.Nanosecond)
+			assert.True(t, expire.After(d), "%s !< %s", d.String(), expire.String())
+			done <- struct{}{}
 		},
 	)
-
 	require.NoError(t, cont.Start(context.Background()))
 
-	// Initial empty state
-	expect := map[string]float64{}
-	require.EqualValues(t, expect, exporter.exporter.Values())
-
-	// Collect after 1s, timeout
-	mock.Add(time.Second)
-
-	err := testHandler.Flush()
-	require.Error(t, err)
-	require.True(t, errors.Is(err, context.DeadlineExceeded))
-
-	expect = map[string]float64{
-		"one.lastvalue//": 1,
-	}
-	require.EqualValues(t, expect, exporter.exporter.Values())
-
-	// Collect again
-	mock.Add(time.Second)
-	expect = map[string]float64{
-		"one.lastvalue//": 2,
-	}
-	require.EqualValues(t, expect, exporter.exporter.Values())
-
-	err = testHandler.Flush()
-	require.NoError(t, err)
+	// Start a collection by setting the clock greater than the collection
+	// peroiod.
+	mock.Add(1 * time.Second)
+	// Wait for the callback to evaluate the test.
+	<-done
 }
 
 func TestCollectAfterStopThenStartAgain(t *testing.T) {
+	eh := new(handler)
 	exp := processortest.NewExporter(
 		export.CumulativeExportKindSelector(),
 		attribute.DefaultEncoder(),
@@ -340,8 +375,10 @@ func TestCollectAfterStopThenStartAgain(t *testing.T) {
 			exp,
 		),
 		controller.WithCollectPeriod(time.Second),
+		controller.WithPushTimeout(time.Microsecond),
 		controller.WithPusher(exp),
 		controller.WithResource(resource.Empty()),
+		controller.WithErrorHandler(eh),
 	)
 	mock := controllertest.NewMockClock()
 	cont.SetClock(mock)
@@ -366,7 +403,6 @@ func TestCollectAfterStopThenStartAgain(t *testing.T) {
 	require.EqualValues(t, map[string]float64{
 		"one.lastvalue//": 1,
 	}, exp.Values())
-	require.NoError(t, testHandler.Flush())
 
 	// Manual collect after Stop still works, subject to
 	// CollectPeriod.
@@ -375,7 +411,7 @@ func TestCollectAfterStopThenStartAgain(t *testing.T) {
 		"one.lastvalue//": 2,
 	}, getMap(t, cont))
 
-	require.NoError(t, testHandler.Flush())
+	require.NoError(t, eh.Flush(time.Microsecond))
 	require.False(t, cont.IsRunning())
 
 	// Start again, see that collection proceeds.  However,

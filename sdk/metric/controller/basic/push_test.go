@@ -19,13 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
@@ -40,29 +38,20 @@ import (
 var testResource = resource.NewWithAttributes(attribute.String("R", "V"))
 
 type handler struct {
-	sync.Mutex
-	err error
+	err chan error
 }
 
 func (h *handler) Handle(err error) {
-	h.Lock()
-	h.err = err
-	h.Unlock()
+	h.err <- err
 }
 
-func (h *handler) Flush() error {
-	h.Lock()
-	err := h.err
-	h.err = nil
-	h.Unlock()
-	return err
-}
-
-var testHandler *handler
-
-func init() {
-	testHandler = new(handler)
-	otel.SetErrorHandler(testHandler)
+func (h *handler) Flush(timeout time.Duration) error {
+	select {
+	case <-time.Tick(timeout):
+		return nil
+	case err := <-h.err:
+		return err
+	}
 }
 
 func newExporter() *processortest.Exporter {
@@ -179,18 +168,22 @@ func TestPushExportError(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			eh := new(handler)
 			exporter := newExporter()
 			exporter.InjectErr = injector("counter1.sum", tt.injectedError)
 
 			// This test validates the error handling
 			// behavior of the basic Processor is honored
 			// by the push processor.
+			pushTimeout := time.Millisecond
 			checkpointer := processor.New(processortest.AggregatorSelector(), exporter)
 			p := controller.New(
 				checkpointer,
 				controller.WithPusher(exporter),
 				controller.WithCollectPeriod(time.Second),
+				controller.WithPushTimeout(pushTimeout),
 				controller.WithResource(testResource),
+				controller.WithErrorHandler(eh),
 			)
 
 			mock := controllertest.NewMockClock()
@@ -209,7 +202,7 @@ func TestPushExportError(t *testing.T) {
 			counter2.Add(ctx, 5)
 
 			require.Equal(t, 0, exporter.ExportCount())
-			require.Nil(t, testHandler.Flush())
+			require.NoError(t, eh.Flush(pushTimeout))
 
 			mock.Add(time.Second)
 			runtime.Gosched()
@@ -217,9 +210,9 @@ func TestPushExportError(t *testing.T) {
 			require.Equal(t, 1, exporter.ExportCount())
 			if tt.expectedError == nil {
 				require.EqualValues(t, tt.expected, exporter.Values())
-				require.NoError(t, testHandler.Flush())
+				require.NoError(t, eh.Flush(pushTimeout))
 			} else {
-				err := testHandler.Flush()
+				err := eh.Flush(pushTimeout)
 				require.Error(t, err)
 				require.Equal(t, tt.expectedError, err)
 			}

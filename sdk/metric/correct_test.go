@@ -98,6 +98,7 @@ func newSDK(t *testing.T) (metric.Meter, *metricsdk.Accumulator, *correctnessPro
 	accum := metricsdk.NewAccumulator(
 		processor,
 		testResource,
+		nil,
 	)
 	meter := metric.WrapMeterImpl(accum, "test")
 	return meter, accum, processor
