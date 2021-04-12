@@ -20,8 +20,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"go.opentelemetry.io/otel/sdk/trace"
 )
 
 // TestNoop tests only that the no-op does not crash in different scenarios.
@@ -29,8 +27,8 @@ func TestNoop(t *testing.T) {
 	nsb := NewNoopExporter()
 
 	require.NoError(t, nsb.ExportSpans(context.Background(), nil))
-	require.NoError(t, nsb.ExportSpans(context.Background(), make([]*trace.SpanSnapshot, 10)))
-	require.NoError(t, nsb.ExportSpans(context.Background(), make([]*trace.SpanSnapshot, 0, 10)))
+	require.NoError(t, nsb.ExportSpans(context.Background(), make(SpanStubs, 10)))
+	require.NoError(t, nsb.ExportSpans(context.Background(), make(SpanStubs, 0, 10)))
 }
 
 func TestNewInMemoryExporter(t *testing.T) {
@@ -39,11 +37,11 @@ func TestNewInMemoryExporter(t *testing.T) {
 	require.NoError(t, imsb.ExportSpans(context.Background(), nil))
 	assert.Len(t, imsb.GetSpans(), 0)
 
-	input := make([]*trace.SpanSnapshot, 10)
+	input := make(SpanStubs, 10)
 	for i := 0; i < 10; i++ {
-		input[i] = new(trace.SpanSnapshot)
+		input[i] = SpanStub{}
 	}
-	require.NoError(t, imsb.ExportSpans(context.Background(), input))
+	require.NoError(t, imsb.ExportSpans(context.Background(), input.Snapshots()))
 	sds := imsb.GetSpans()
 	assert.Len(t, sds, 10)
 	for i, sd := range sds {

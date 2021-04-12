@@ -37,6 +37,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -334,12 +335,12 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 
 	tests := []struct {
 		name string
-		data *sdktrace.SpanSnapshot
+		data tracetest.SpanStub
 		want *gen.Span
 	}{
 		{
 			name: "no status description",
-			data: &sdktrace.SpanSnapshot{
+			data: tracetest.SpanStub{
 				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
 					TraceID: traceID,
 					SpanID:  spanID,
@@ -373,7 +374,7 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 		},
 		{
 			name: "no parent",
-			data: &sdktrace.SpanSnapshot{
+			data: tracetest.SpanStub{
 				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
 					TraceID: traceID,
 					SpanID:  spanID,
@@ -394,7 +395,7 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 					attribute.Float64("double", doubleValue),
 					attribute.Int64("int", intValue),
 				},
-				MessageEvents: []trace.Event{
+				Events: []trace.Event{
 					{
 						Name:                  eventNameValue,
 						Attributes:            []attribute.KeyValue{attribute.String("k1", keyValue)},
@@ -462,7 +463,7 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 		},
 		{
 			name: "with parent",
-			data: &sdktrace.SpanSnapshot{
+			data: tracetest.SpanStub{
 				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
 					TraceID: traceID,
 					SpanID:  spanID,
@@ -519,7 +520,7 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 		},
 		{
 			name: "resources do not affect the tags",
-			data: &sdktrace.SpanSnapshot{
+			data: tracetest.SpanStub{
 				SpanContext: trace.NewSpanContext(trace.SpanContextConfig{
 					TraceID: traceID,
 					SpanID:  spanID,
@@ -561,7 +562,7 @@ func Test_spanSnapshotToThrift(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := spanSnapshotToThrift(tt.data)
+			got := spanToThrift(tt.data.Snapshot())
 			sort.Slice(got.Tags, func(i, j int) bool {
 				return got.Tags[i].Key < got.Tags[j].Key
 			})
@@ -626,7 +627,7 @@ func TestExporterExportSpansHonorsCancel(t *testing.T) {
 	e, err := NewRawExporter(withTestCollectorEndpoint())
 	require.NoError(t, err)
 	now := time.Now()
-	ss := []*sdktrace.SpanSnapshot{
+	ss := tracetest.SpanStubs{
 		{
 			Name: "s1",
 			Resource: resource.NewWithAttributes(
@@ -649,14 +650,14 @@ func TestExporterExportSpansHonorsCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	assert.EqualError(t, e.ExportSpans(ctx, ss), context.Canceled.Error())
+	assert.EqualError(t, e.ExportSpans(ctx, ss.Snapshots()), context.Canceled.Error())
 }
 
 func TestExporterExportSpansHonorsTimeout(t *testing.T) {
 	e, err := NewRawExporter(withTestCollectorEndpoint())
 	require.NoError(t, err)
 	now := time.Now()
-	ss := []*sdktrace.SpanSnapshot{
+	ss := tracetest.SpanStubs{
 		{
 			Name: "s1",
 			Resource: resource.NewWithAttributes(
@@ -680,7 +681,7 @@ func TestExporterExportSpansHonorsTimeout(t *testing.T) {
 	defer cancel()
 	<-ctx.Done()
 
-	assert.EqualError(t, e.ExportSpans(ctx, ss), context.DeadlineExceeded.Error())
+	assert.EqualError(t, e.ExportSpans(ctx, ss.Snapshots()), context.DeadlineExceeded.Error())
 }
 
 func TestJaegerBatchList(t *testing.T) {
@@ -692,19 +693,19 @@ func TestJaegerBatchList(t *testing.T) {
 
 	testCases := []struct {
 		name               string
-		spanSnapshotList   []*sdktrace.SpanSnapshot
+		spans              []sdktrace.ReadOnlySpan
 		defaultServiceName string
 		expectedBatchList  []*gen.Batch
 	}{
 		{
 			name:              "no span shots",
-			spanSnapshotList:  nil,
+			spans:             nil,
 			expectedBatchList: nil,
 		},
 		{
-			name: "span's snapshot contains nil span",
-			spanSnapshotList: []*sdktrace.SpanSnapshot{
-				{
+			name: "span's contains nil span",
+			spans: []sdktrace.ReadOnlySpan{
+				tracetest.SpanStub{
 					Name: "s1",
 					Resource: resource.NewWithAttributes(
 						semconv.ServiceNameKey.String("name"),
@@ -712,7 +713,7 @@ func TestJaegerBatchList(t *testing.T) {
 					),
 					StartTime: now,
 					EndTime:   now,
-				},
+				}.Snapshot(),
 				nil,
 			},
 			expectedBatchList: []*gen.Batch{
@@ -737,7 +738,7 @@ func TestJaegerBatchList(t *testing.T) {
 		},
 		{
 			name: "merge spans that have the same resources",
-			spanSnapshotList: []*sdktrace.SpanSnapshot{
+			spans: tracetest.SpanStubs{
 				{
 					Name: "s1",
 					Resource: resource.NewWithAttributes(
@@ -765,7 +766,7 @@ func TestJaegerBatchList(t *testing.T) {
 					StartTime: now,
 					EndTime:   now,
 				},
-			},
+			}.Snapshots(),
 			expectedBatchList: []*gen.Batch{
 				{
 					Process: &gen.Process{
@@ -812,7 +813,7 @@ func TestJaegerBatchList(t *testing.T) {
 		},
 		{
 			name: "no service name in spans",
-			spanSnapshotList: []*sdktrace.SpanSnapshot{
+			spans: tracetest.SpanStubs{
 				{
 					Name: "s1",
 					Resource: resource.NewWithAttributes(
@@ -821,8 +822,7 @@ func TestJaegerBatchList(t *testing.T) {
 					StartTime: now,
 					EndTime:   now,
 				},
-				nil,
-			},
+			}.Snapshots(),
 			defaultServiceName: "default service name",
 			expectedBatchList: []*gen.Batch{
 				{
@@ -848,7 +848,7 @@ func TestJaegerBatchList(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			batchList := jaegerBatchList(tc.spanSnapshotList, tc.defaultServiceName)
+			batchList := jaegerBatchList(tc.spans, tc.defaultServiceName)
 
 			assert.ElementsMatch(t, tc.expectedBatchList, batchList)
 		})

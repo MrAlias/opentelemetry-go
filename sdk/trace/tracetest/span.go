@@ -25,8 +25,23 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type SpanStubs []*SpanStub
+type SpanStubs []SpanStub
 
+// SpanStubFromReadOnlySpan returns SpanStubs populated from ro.
+func SpanStubsFromReadOnlySpans(ro []tracesdk.ReadOnlySpan) SpanStubs {
+	if len(ro) == 0 {
+		return nil
+	}
+
+	s := make(SpanStubs, 0, len(ro))
+	for _, r := range ro {
+		s = append(s, SpanStubFromReadOnlySpan(r))
+	}
+
+	return s
+}
+
+// Snapshots returns s as a slice of ReadOnlySpans.
 func (s SpanStubs) Snapshots() []tracesdk.ReadOnlySpan {
 	if len(s) == 0 {
 		return nil
@@ -59,6 +74,30 @@ type SpanStub struct {
 	ChildSpanCount         int
 	Resource               *resource.Resource
 	InstrumentationLibrary instrumentation.Library
+}
+
+// SpanStubFromReadOnlySpan returns a SpanStub populated from ro.
+func SpanStubFromReadOnlySpan(ro tracesdk.ReadOnlySpan) SpanStub {
+	return SpanStub{
+		Name:                   ro.Name(),
+		SpanContext:            ro.SpanContext(),
+		Parent:                 ro.Parent(),
+		SpanKind:               ro.SpanKind(),
+		StartTime:              ro.StartTime(),
+		EndTime:                ro.EndTime(),
+		Attributes:             ro.Attributes(),
+		Events:                 ro.Events(),
+		Links:                  ro.Links(),
+		StatusCode:             ro.StatusCode(),
+		StatusMessage:          ro.StatusMessage(),
+		Recording:              ro.IsRecording(),
+		DroppedAttributes:      ro.DroppedAttributes(),
+		DroppedEvents:          ro.DroppedEvents(),
+		DroppedLinks:           ro.DroppedLinks(),
+		ChildSpanCount:         ro.ChildSpanCount(),
+		Resource:               ro.Resource(),
+		InstrumentationLibrary: ro.InstrumentationLibrary(),
+	}
 }
 
 // Snapshot returns a read-only copy of the SpanStub.

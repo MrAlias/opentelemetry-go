@@ -120,8 +120,8 @@ func NewRawExporter(endpointOption EndpointOption, opts ...Option) (*Exporter, e
 		o:                  o,
 		defaultServiceName: defaultServiceName,
 	}
-	bundler := bundler.NewBundler((*sdktrace.SpanSnapshot)(nil), func(bundle interface{}) {
-		if err := e.upload(bundle.([]*sdktrace.SpanSnapshot)); err != nil {
+	bundler := bundler.NewBundler(sdktrace.ReadOnlySpan{}, func(bundle interface{}) {
+		if err := e.upload(bundle.([]sdktrace.ReadOnlySpan)); err != nil {
 			otel.Handle(err)
 		}
 	})
@@ -201,7 +201,7 @@ type Exporter struct {
 var _ sdktrace.SpanExporter = (*Exporter)(nil)
 
 // ExportSpans exports SpanSnapshots to Jaeger.
-func (e *Exporter) ExportSpans(ctx context.Context, ss []*sdktrace.SpanSnapshot) error {
+func (e *Exporter) ExportSpans(ctx context.Context, ss []sdktrace.ReadOnlySpan) error {
 	e.stoppedMu.RLock()
 	stopped := e.stopped
 	e.stoppedMu.RUnlock()
@@ -210,10 +210,13 @@ func (e *Exporter) ExportSpans(ctx context.Context, ss []*sdktrace.SpanSnapshot)
 	}
 
 	for _, span := range ss {
+		if span == nil {
+			continue
+		}
 		// TODO(jbd): Handle oversized bundlers.
 		err := e.bundler.AddWait(ctx, span, 1)
 		if err != nil {
-			return fmt.Errorf("failed to bundle %q: %w", span.Name, err)
+			return fmt.Errorf("failed to bundle %q: %w", span.Name(), err)
 		}
 		select {
 		case <-ctx.Done():
@@ -256,41 +259,41 @@ func (e *Exporter) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func spanSnapshotToThrift(ss *sdktrace.SpanSnapshot) *gen.Span {
-	tags := make([]*gen.Tag, 0, len(ss.Attributes))
-	for _, kv := range ss.Attributes {
+func spanToThrift(ss sdktrace.ReadOnlySpan) *gen.Span {
+	tags := make([]*gen.Tag, 0, len(ss.Attributes()))
+	for _, kv := range ss.Attributes() {
 		tag := keyValueToTag(kv)
 		if tag != nil {
 			tags = append(tags, tag)
 		}
 	}
 
-	if il := ss.InstrumentationLibrary; il.Name != "" {
+	if il := ss.InstrumentationLibrary(); il.Name != "" {
 		tags = append(tags, getStringTag(keyInstrumentationLibraryName, il.Name))
 		if il.Version != "" {
 			tags = append(tags, getStringTag(keyInstrumentationLibraryVersion, il.Version))
 		}
 	}
 
-	if ss.SpanKind != trace.SpanKindInternal {
+	if ss.SpanKind() != trace.SpanKindInternal {
 		tags = append(tags,
-			getStringTag(keySpanKind, ss.SpanKind.String()),
+			getStringTag(keySpanKind, ss.SpanKind().String()),
 		)
 	}
 
-	if ss.StatusCode != codes.Unset {
-		tags = append(tags, getInt64Tag(keyStatusCode, int64(ss.StatusCode)))
-		if ss.StatusMessage != "" {
-			tags = append(tags, getStringTag(keyStatusMessage, ss.StatusMessage))
+	if code := ss.StatusCode(); code != codes.Unset {
+		tags = append(tags, getInt64Tag(keyStatusCode, int64(code)))
+		if msg := ss.StatusMessage(); msg != "" {
+			tags = append(tags, getStringTag(keyStatusMessage, msg))
 		}
 
-		if ss.StatusCode == codes.Error {
+		if code == codes.Error {
 			tags = append(tags, getBoolTag(keyError, true))
 		}
 	}
 
 	var logs []*gen.Log
-	for _, a := range ss.MessageEvents {
+	for _, a := range ss.Events() {
 		nTags := len(a.Attributes)
 		if a.Name != "" {
 			nTags++
@@ -320,7 +323,7 @@ func spanSnapshotToThrift(ss *sdktrace.SpanSnapshot) *gen.Span {
 	}
 
 	var refs []*gen.SpanRef
-	for _, link := range ss.Links {
+	for _, link := range ss.Links() {
 		tid := link.TraceID()
 		sid := link.SpanID()
 		refs = append(refs, &gen.SpanRef{
@@ -331,18 +334,18 @@ func spanSnapshotToThrift(ss *sdktrace.SpanSnapshot) *gen.Span {
 		})
 	}
 
-	tid := ss.SpanContext.TraceID()
-	sid := ss.SpanContext.SpanID()
-	psid := ss.Parent.SpanID()
+	tid := ss.SpanContext().TraceID()
+	sid := ss.SpanContext().SpanID()
+	psid := ss.Parent().SpanID()
 	return &gen.Span{
 		TraceIdHigh:   int64(binary.BigEndian.Uint64(tid[0:8])),
 		TraceIdLow:    int64(binary.BigEndian.Uint64(tid[8:16])),
 		SpanId:        int64(binary.BigEndian.Uint64(sid[:])),
 		ParentSpanId:  int64(binary.BigEndian.Uint64(psid[:])),
-		OperationName: ss.Name, // TODO: if span kind is added then add prefix "Sent"/"Recv"
-		Flags:         int32(ss.SpanContext.TraceFlags()),
-		StartTime:     ss.StartTime.UnixNano() / 1000,
-		Duration:      ss.EndTime.Sub(ss.StartTime).Nanoseconds() / 1000,
+		OperationName: ss.Name(), // TODO: if span kind is added then add prefix "Sent"/"Recv"
+		Flags:         int32(ss.SpanContext().TraceFlags()),
+		StartTime:     ss.StartTime().UnixNano() / 1000,
+		Duration:      ss.EndTime().Sub(ss.StartTime()).Nanoseconds() / 1000,
 		Tags:          tags,
 		Logs:          logs,
 		References:    refs,
@@ -423,7 +426,7 @@ func (e *Exporter) Flush() {
 	flush(e)
 }
 
-func (e *Exporter) upload(spans []*sdktrace.SpanSnapshot) error {
+func (e *Exporter) upload(spans []sdktrace.ReadOnlySpan) error {
 	batchList := jaegerBatchList(spans, e.defaultServiceName)
 	for _, batch := range batchList {
 		err := e.uploader.upload(batch)
@@ -437,7 +440,7 @@ func (e *Exporter) upload(spans []*sdktrace.SpanSnapshot) error {
 
 // jaegerBatchList transforms a slice of SpanSnapshot into a slice of jaeger
 // Batch.
-func jaegerBatchList(ssl []*sdktrace.SpanSnapshot, defaultServiceName string) []*gen.Batch {
+func jaegerBatchList(ssl []sdktrace.ReadOnlySpan, defaultServiceName string) []*gen.Batch {
 	if len(ssl) == 0 {
 		return nil
 	}
@@ -449,15 +452,15 @@ func jaegerBatchList(ssl []*sdktrace.SpanSnapshot, defaultServiceName string) []
 			continue
 		}
 
-		resourceKey := ss.Resource.Equivalent()
+		resourceKey := ss.Resource().Equivalent()
 		batch, bOK := batchDict[resourceKey]
 		if !bOK {
 			batch = &gen.Batch{
-				Process: process(ss.Resource, defaultServiceName),
+				Process: process(ss.Resource(), defaultServiceName),
 				Spans:   []*gen.Span{},
 			}
 		}
-		batch.Spans = append(batch.Spans, spanSnapshotToThrift(ss))
+		batch.Spans = append(batch.Spans, spanToThrift(ss))
 		batchDict[resourceKey] = batch
 	}
 
