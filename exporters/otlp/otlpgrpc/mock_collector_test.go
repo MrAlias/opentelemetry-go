@@ -107,7 +107,8 @@ type mockCollector struct {
 	metricSvc *mockMetricService
 
 	endpoint string
-	stopFunc func() error
+	ln       *listener
+	stopFunc func()
 	stopOnce sync.Once
 }
 
@@ -120,7 +121,7 @@ func (mc *mockCollector) stop() error {
 	var err = errAlreadyStopped
 	mc.stopOnce.Do(func() {
 		if mc.stopFunc != nil {
-			err = mc.stopFunc()
+			mc.stopFunc()
 		}
 	})
 	// Give it sometime to shutdown.
@@ -189,19 +190,35 @@ func runMockCollectorAtEndpoint(t *testing.T, endpoint string) *mockCollector {
 	mc := makeMockCollector(t)
 	collectortracepb.RegisterTraceServiceServer(srv, mc.traceSvc)
 	collectormetricpb.RegisterMetricsServiceServer(srv, mc.metricSvc)
+	mc.ln = newListener(ln)
 	go func() {
-		_ = srv.Serve(ln)
+		_ = srv.Serve((net.Listener)(mc.ln))
 	}()
 
-	deferFunc := func() error {
-		srv.Stop()
-		return ln.Close()
-	}
-
-	_, collectorPortStr, _ := net.SplitHostPort(ln.Addr().String())
-
-	mc.endpoint = "localhost:" + collectorPortStr
-	mc.stopFunc = deferFunc
+	mc.endpoint = ln.Addr().String()
+	mc.stopFunc = srv.Stop
 
 	return mc
 }
+
+type listener struct {
+	wrapped net.Listener
+
+	C chan struct{}
+}
+
+func newListener(wrapped net.Listener) *listener {
+	return &listener{wrapped: wrapped, C: make(chan struct{}, 1)}
+}
+
+func (l *listener) Accept() (net.Conn, error) {
+	conn, err := l.wrapped.Accept()
+	select {
+	case l.C <- struct{}{}:
+	default:
+		// If C is full move on.
+	}
+	return conn, err
+}
+func (l *listener) Close() error   { return l.wrapped.Close() }
+func (l *listener) Addr() net.Addr { return l.wrapped.Addr() }
