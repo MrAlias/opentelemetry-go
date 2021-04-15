@@ -18,7 +18,9 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -120,6 +122,7 @@ var errAlreadyStopped = fmt.Errorf("already stopped")
 func (mc *mockCollector) stop() error {
 	var err = errAlreadyStopped
 	mc.stopOnce.Do(func() {
+		err = nil
 		if mc.stopFunc != nil {
 			mc.stopFunc()
 		}
@@ -175,9 +178,22 @@ func (mc *mockCollector) GetMetrics() []*metricpb.Metric {
 	return mc.getMetrics()
 }
 
+// WaitForConn will wait indefintely for a connection to be estabilished
+// with the mockCollector before returning.
+func (mc *mockCollector) WaitForConn() {
+	for {
+		select {
+		case <-mc.ln.C:
+			return
+		default:
+			runtime.Gosched()
+		}
+	}
+}
+
 // runMockCollector is a helper function to create a mock Collector
 func runMockCollector(t *testing.T) *mockCollector {
-	return runMockCollectorAtEndpoint(t, "localhost:0")
+	return runMockCollectorAtEndpoint(t, "127.0.0.1:0")
 }
 
 func runMockCollectorAtEndpoint(t *testing.T, endpoint string) *mockCollector {
@@ -204,14 +220,26 @@ func runMockCollectorAtEndpoint(t *testing.T, endpoint string) *mockCollector {
 type listener struct {
 	wrapped net.Listener
 
-	C chan struct{}
+	C      chan struct{}
+	closed chan struct{}
 }
 
 func newListener(wrapped net.Listener) *listener {
-	return &listener{wrapped: wrapped, C: make(chan struct{}, 1)}
+	return &listener{
+		wrapped: wrapped,
+		C:       make(chan struct{}, 1),
+		closed:  make(chan struct{}),
+	}
 }
 
 func (l *listener) Accept() (net.Conn, error) {
+	select {
+	case <-l.closed:
+		close(l.C)
+		return nil, syscall.EINVAL
+	default:
+	}
+
 	conn, err := l.wrapped.Accept()
 	select {
 	case l.C <- struct{}{}:
@@ -220,5 +248,10 @@ func (l *listener) Accept() (net.Conn, error) {
 	}
 	return conn, err
 }
-func (l *listener) Close() error   { return l.wrapped.Close() }
+
+func (l *listener) Close() error {
+	close(l.closed)
+	return l.wrapped.Close()
+}
+
 func (l *listener) Addr() net.Addr { return l.wrapped.Addr() }
