@@ -13,7 +13,7 @@ require (
 	go.opentelemetry.io/otel v1.0.0-RC2
 	go.opentelemetry.io/otel/bridge/opencensus v0.21.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v0.22.0
-	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.0.0-RC2
+	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.0.0-RC3
 	go.opentelemetry.io/otel/sdk v1.0.0-RC2
 	go.opentelemetry.io/otel/sdk/export/metric v0.22.0
 )
