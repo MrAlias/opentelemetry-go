@@ -10,7 +10,7 @@ replace (
 
 require (
 	go.opentelemetry.io/otel v1.0.0
-	go.opentelemetry.io/otel/exporters/jaeger v1.0.0
+	go.opentelemetry.io/otel/exporters/jaeger v1.0.1
 	go.opentelemetry.io/otel/sdk v1.0.0
 )
 
