@@ -6,7 +6,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/google/go-cmp v0.5.6
 	github.com/stretchr/testify v1.7.0
-	go.opentelemetry.io/otel v1.0.0
+	go.opentelemetry.io/otel v1.0.1
 	go.opentelemetry.io/otel/metric v0.23.0
 	go.opentelemetry.io/otel/sdk v1.0.0
 	go.opentelemetry.io/otel/sdk/export/metric v0.23.0
