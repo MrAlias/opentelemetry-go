@@ -10,7 +10,7 @@ require (
 	go.opentelemetry.io/otel/metric v0.23.0
 	go.opentelemetry.io/otel/sdk v1.0.0
 	go.opentelemetry.io/otel/sdk/export/metric v0.23.0
-	go.opentelemetry.io/otel/sdk/metric v0.23.0
+	go.opentelemetry.io/otel/sdk/metric v0.24.0
 	go.opentelemetry.io/proto/otlp v0.9.0
 	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
 	google.golang.org/grpc v1.40.0
