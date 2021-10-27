@@ -218,7 +218,7 @@ func TestClientReconnects(t *testing.T) {
 			return true
 		}
 		return false
-	}, deadline.Sub(time.Now()), 10*time.Millisecond)
+	}, time.Until(deadline), 10*time.Millisecond)
 }
 
 // This test takes a long time to run: to skip it, run tests using: -short
