@@ -49,6 +49,10 @@ type mod struct {
 func (r repo) findModules() (mods, error) {
 	var results []mod
 	err := filepath.Walk(string(r), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
 		if !info.IsDir() {
 			return nil
 		}
