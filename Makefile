@@ -139,8 +139,8 @@ lint: misspell lint-modules | $(GOLANGCI_LINT)
 	set -e; for dir in $(ALL_GO_MOD_DIRS); do \
 	  echo "golangci-lint in $${dir}"; \
 	  (cd "$${dir}" && \
-	    $(GOLANGCI_LINT) run --fix && \
-	    $(GOLANGCI_LINT) run); \
+	    $(GOLANGCI_LINT) run --allow-serial-runners --fix && \
+	    $(GOLANGCI_LINT) run --allow-serial-runners); \
 	done
 
 .PHONY: vanity-import-check
