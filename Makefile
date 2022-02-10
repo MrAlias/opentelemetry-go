@@ -73,50 +73,47 @@ tools: $(CROSSLINK) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(POR
 # Build
 
 .PHONY: examples generate build
-examples:
-	@set -e; for dir in $(EXAMPLES); do \
-	  echo "$(GO) build $${dir}/..."; \
-	  (cd "$${dir}" && \
-	   $(GO) build .); \
-	done
 
-generate: $(STRINGER) $(PORTO)
-	set -e; for dir in $(ALL_GO_MOD_DIRS); do \
-	  echo "$(GO) generate $${dir}/..."; \
-	  (cd "$${dir}" && \
-	    PATH="$(TOOLS):$${PATH}" $(GO) generate ./... && \
-		$(PORTO) -w .); \
-	done
+generate: $(ALL_GO_MOD_DIRS:%=generate/%) | $(STRINGER) $(PORTO)
+generate/%: DIR=$*
+generate/%:
+	@echo "$(GO) generate $(DIR)/..." \
+		&& cd $(DIR) \
+		&& PATH="$(TOOLS):$${PATH}" $(GO) generate ./... && $(PORTO) -w .
 
-build: generate
-	# Build all package code including testing code.
-	set -e; for dir in $(ALL_GO_MOD_DIRS); do \
-	  echo "$(GO) build $${dir}/..."; \
-	  (cd "$${dir}" && \
-	    $(GO) build ./... && \
-		$(GO) list ./... \
-		  | grep -v third_party \
-		  | xargs $(GO) test -vet=off -run xxxxxMatchNothingxxxxx >/dev/null); \
-	done
+examples: $(EXAMPLES:%=build/%)
+build: generate $(ALL_GO_MOD_DIRS:%=build/%) $(ALL_GO_MOD_DIRS:%=build-tests/%)
+build/%: DIR=$*
+build/%:
+	@echo "$(GO) build $(DIR)/..." \
+		&& cd $(DIR) \
+		&& $(GO) build ./...
+build-tests/%: DIR=$*
+build-tests/%:
+	@echo "$(GO) build tests $(DIR)/..." \
+		&& cd $(DIR) \
+		&& $(GO) list ./... \
+		| grep -v third_party \
+		| xargs $(GO) test -vet=off -run xxxxxMatchNothingxxxxx >/dev/null
 
 # Tests
 
 TEST_TARGETS := test-default test-bench test-short test-verbose test-race
 .PHONY: $(TEST_TARGETS) test
-test-default: ARGS=-v -race
+test-default: ARGS=-race
 test-bench:   ARGS=-run=xxxxxMatchNothingxxxxx -test.benchtime=1ms -bench=.
 test-short:   ARGS=-short
 test-verbose: ARGS=-v
 test-race:    ARGS=-race
 $(TEST_TARGETS): test
-test:
-	@set -e; for dir in $(ALL_GO_MOD_DIRS); do \
-	  echo "$(GO) test -timeout $(TIMEOUT)s $(ARGS) $${dir}/..."; \
-	  (cd "$${dir}" && \
-	    $(GO) list ./... \
-		  | grep -v third_party \
-		  | xargs $(GO) test -timeout $(TIMEOUT)s $(ARGS)); \
-	done
+test: $(ALL_GO_MOD_DIRS:%=test/%)
+test/%: DIR=$*
+test/%:
+	@echo "$(GO) test -timeout $(TIMEOUT)s $(ARGS) $(DIR)/..." \
+		&& cd $(DIR) \
+		&& $(GO) list ./... \
+		| grep -v third_party \
+		| xargs $(GO) test -timeout $(TIMEOUT)s $(ARGS)
 
 COVERAGE_MODE    = atomic
 COVERAGE_PROFILE = coverage.out
@@ -134,32 +131,39 @@ test-coverage: | $(GOCOVMERGE)
 	done; \
 	$(GOCOVMERGE) $$(find . -name coverage.out) > coverage.txt
 
+.PHONY: golangci-lint golangci-lint-fix
+golangci-lint-fix: ARGS=--fix
+golangci-lint-fix: golangci-lint
+golangci-lint: $(ALL_GO_MOD_DIRS:%=golangci-lint/%) | $(GOLANGCI_LINT)
+golangci-lint/%: DIR=$*
+golangci-lint/%:
+	@echo 'golangci-lint $(DIR)' \
+		&& cd $(DIR) \
+		&& $(GOLANGCI_LINT) run --allow-serial-runners $(ARGS)
+
+.PHONY: go-mod-tidy
+go-mod-tidy: $(ALL_GO_MOD_DIRS:%=go-mod-tidy/%) $(TOOLS_MOD_DIR:%=go-mod-tidy/%)
+go-mod-tidy/%: DIR=$*
+go-mod-tidy/%:
+	@echo "$(GO) mod tidy in $(DIR)" \
+		&& cd $(DIR) \
+		&& $(GO) mod tidy
+
+.PHONY: lint-modules
+lint-modules: go-mod-tidy | $(CROSSLINK)
+	@echo "cross-linking all go modules" \
+		&& $(CROSSLINK)
+
 .PHONY: lint
-lint: misspell lint-modules | $(GOLANGCI_LINT)
-	set -e; for dir in $(ALL_GO_MOD_DIRS); do \
-	  echo "golangci-lint in $${dir}"; \
-	  (cd "$${dir}" && \
-	    $(GOLANGCI_LINT) run --allow-serial-runners --fix && \
-	    $(GOLANGCI_LINT) run --allow-serial-runners); \
-	done
+lint: misspell lint-modules golangci-lint
 
 .PHONY: vanity-import-check
 vanity-import-check: | $(PORTO)
-	$(PORTO) --include-internal -l .
+	@$(PORTO) --include-internal -l .
 
 .PHONY: misspell
 misspell: | $(MISSPELL)
-	$(MISSPELL) -w $(ALL_DOCS)
-
-.PHONY: lint-modules
-lint-modules: | $(CROSSLINK)
-	set -e; for dir in $(ALL_GO_MOD_DIRS) $(TOOLS_MOD_DIR); do \
-	  echo "$(GO) mod tidy in $${dir}"; \
-	  (cd "$${dir}" && \
-	    $(GO) mod tidy); \
-	done
-	echo "cross-linking all go modules"
-	$(CROSSLINK)
+	@$(MISSPELL) -w $(ALL_DOCS)
 
 .PHONY: license-check
 license-check:
