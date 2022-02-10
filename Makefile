@@ -27,8 +27,8 @@ TIMEOUT = 60
 .DEFAULT_GOAL := precommit
 
 .PHONY: precommit ci
-precommit: dependabot-check license-check lint build examples test-default
-ci: precommit check-clean-work-tree test-coverage
+precommit: dependabot-check license-check misspell lint-modules golangci-lint-fix test-default
+ci: dependabot-check license-check lint build examples test-default check-clean-work-tree test-coverage
 
 # Tools
 
@@ -74,9 +74,9 @@ tools: $(CROSSLINK) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(POR
 
 .PHONY: examples generate build
 
-generate: $(ALL_GO_MOD_DIRS:%=generate/%) | $(STRINGER) $(PORTO)
+generate: $(ALL_GO_MOD_DIRS:%=generate/%)
 generate/%: DIR=$*
-generate/%:
+generate/%: | $(STRINGER) $(PORTO)
 	@echo "$(GO) generate $(DIR)/..." \
 		&& cd $(DIR) \
 		&& PATH="$(TOOLS):$${PATH}" $(GO) generate ./... && $(PORTO) -w .
@@ -134,10 +134,10 @@ test-coverage: | $(GOCOVMERGE)
 .PHONY: golangci-lint golangci-lint-fix
 golangci-lint-fix: ARGS=--fix
 golangci-lint-fix: golangci-lint
-golangci-lint: $(ALL_GO_MOD_DIRS:%=golangci-lint/%) | $(GOLANGCI_LINT)
+golangci-lint: $(ALL_GO_MOD_DIRS:%=golangci-lint/%)
 golangci-lint/%: DIR=$*
-golangci-lint/%:
-	@echo 'golangci-lint $(DIR)' \
+golangci-lint/%: | $(GOLANGCI_LINT)
+	@echo 'golangci-lint $(if $(ARGS),$(ARGS) ,)$(DIR)' \
 		&& cd $(DIR) \
 		&& $(GOLANGCI_LINT) run --allow-serial-runners $(ARGS)
 
