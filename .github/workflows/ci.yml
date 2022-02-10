@@ -10,28 +10,6 @@ env:
   # Default minimum version of Go to support.
   DEFAULT_GO_VERSION: 1.16
 jobs:
-  resolve-modules:
-    name: Resolve Modules
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout Sources
-        uses: actions/checkout@v2
-      - id: set-matrix
-        run: ./internal/tools/resolve-modules.sh
-  golangci:
-    name: Linter
-    needs: resolve-modules
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJson(needs.resolve-modules.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@v2
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v2.5.2
-        with:
-          working-directory: ${{ matrix.workdir }}
   lint:
     runs-on: ubuntu-latest
     steps:
