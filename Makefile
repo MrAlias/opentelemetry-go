@@ -81,13 +81,9 @@ generate/%: | $(STRINGER) $(PORTO)
 		&& cd $(DIR) \
 		&& PATH="$(TOOLS):$${PATH}" $(GO) generate ./... && $(PORTO) -w .
 
-examples: $(EXAMPLES:%=examples/%)
-examples/%: DIR=$*
-examples/%:
-	@echo "$(GO) build $(DIR)/..." \
-		&& cd $(DIR) \
-		&& $(GO) build ./...
-
+examples:
+	@echo "disabled"
+#examples: $(EXAMPLES:%=build/%)
 build: generate $(ALL_GO_MOD_DIRS:%=build/%) $(ALL_GO_MOD_DIRS:%=build-tests/%)
 build/%: DIR=$*
 build/%:
