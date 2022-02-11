@@ -18,7 +18,8 @@ TOOLS_MOD_DIR := ./internal/tools
 # All source code and documents. Used in spell check.
 ALL_DOCS := $(shell find . -name '*.md' -type f | sort)
 # All directories with go.mod files related to opentelemetry library. Used for building, testing and linting.
-ALL_GO_MOD_DIRS := $(filter-out $(TOOLS_MOD_DIR), $(shell find . -type f -name 'go.mod' -exec dirname {} \; | egrep -v '^./example' | sort)) $(shell find ./example -type f -name 'go.mod' -exec dirname {} \; | sort)
+ALL_GO_MOD_DIRS := $(shell find . -type f -name 'go.mod' -exec dirname {} \; | sort)
+OTEL_GO_MOD_DIRS := $(filter-out $(TOOLS_MOD_DIR), $(ALL_GO_MOD_DIRS))
 ALL_COVERAGE_MOD_DIRS := $(shell find . -type f -name 'go.mod' -exec dirname {} \; | egrep -v '^./example|^$(TOOLS_MOD_DIR)' | sort)
 
 GO = go
@@ -27,7 +28,7 @@ TIMEOUT = 60
 .DEFAULT_GOAL := precommit
 
 .PHONY: precommit ci
-precommit: dependabot-check license-check misspell lint-modules golangci-lint-fix test-default
+precommit: dependabot-check license-check misspell go-mod-tidy golangci-lint-fix test-default
 ci: dependabot-check license-check lint build examples test-default check-clean-work-tree test-coverage
 
 # Tools
@@ -74,22 +75,20 @@ tools: $(CROSSLINK) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(POR
 
 .PHONY: examples generate build
 
-generate: $(ALL_GO_MOD_DIRS:%=generate/%)
+generate: $(OTEL_GO_MOD_DIRS:%=generate/%)
 generate/%: DIR=$*
 generate/%: | $(STRINGER) $(PORTO)
 	@echo "$(GO) generate $(DIR)/..." \
 		&& cd $(DIR) \
 		&& PATH="$(TOOLS):$${PATH}" $(GO) generate ./... && $(PORTO) -w .
 
-examples:
-	@echo "disabled"
-#examples: $(EXAMPLES:%=build/%)
-build: generate $(ALL_GO_MOD_DIRS:%=build/%) $(ALL_GO_MOD_DIRS:%=build-tests/%)
+build: generate $(OTEL_GO_MOD_DIRS:%=build/%) $(OTEL_GO_MOD_DIRS:%=build-tests/%)
 build/%: DIR=$*
 build/%:
 	@echo "$(GO) build $(DIR)/..." \
 		&& cd $(DIR) \
 		&& $(GO) build ./...
+
 build-tests/%: DIR=$*
 build-tests/%:
 	@echo "$(GO) build tests $(DIR)/..." \
@@ -97,6 +96,8 @@ build-tests/%:
 		&& $(GO) list ./... \
 		| grep -v third_party \
 		| xargs $(GO) test -vet=off -run xxxxxMatchNothingxxxxx >/dev/null
+
+examples: $(EXAMPLES:%=build/%)
 
 # Tests
 
@@ -108,7 +109,7 @@ test-short:   ARGS=-short
 test-verbose: ARGS=-v
 test-race:    ARGS=-race
 $(TEST_TARGETS): test
-test: $(ALL_GO_MOD_DIRS:%=test/%)
+test: $(OTEL_GO_MOD_DIRS:%=test/%)
 test/%: DIR=$*
 test/%:
 	@echo "$(GO) test -timeout $(TIMEOUT)s $(ARGS) $(DIR)/..." \
@@ -136,25 +137,28 @@ test-coverage: | $(GOCOVMERGE)
 .PHONY: golangci-lint golangci-lint-fix
 golangci-lint-fix: ARGS=--fix
 golangci-lint-fix: golangci-lint
-golangci-lint: $(ALL_GO_MOD_DIRS:%=golangci-lint/%)
+golangci-lint: $(OTEL_GO_MOD_DIRS:%=golangci-lint/%)
 golangci-lint/%: DIR=$*
 golangci-lint/%: | $(GOLANGCI_LINT)
 	@echo 'golangci-lint $(if $(ARGS),$(ARGS) ,)$(DIR)' \
 		&& cd $(DIR) \
 		&& $(GOLANGCI_LINT) run --allow-serial-runners $(ARGS)
 
+.PHONY: crosslink
+crosslink: | $(CROSSLINK)
+	@echo "cross-linking all go modules" \
+		&& $(CROSSLINK)
+
 .PHONY: go-mod-tidy
-go-mod-tidy: $(ALL_GO_MOD_DIRS:%=go-mod-tidy/%) $(TOOLS_MOD_DIR:%=go-mod-tidy/%)
+go-mod-tidy: $(ALL_GO_MOD_DIRS:%=go-mod-tidy/%)
 go-mod-tidy/%: DIR=$*
-go-mod-tidy/%:
+go-mod-tidy/%: | crosslink
 	@echo "$(GO) mod tidy in $(DIR)" \
 		&& cd $(DIR) \
 		&& $(GO) mod tidy
 
 .PHONY: lint-modules
-lint-modules: go-mod-tidy | $(CROSSLINK)
-	@echo "cross-linking all go modules" \
-		&& $(CROSSLINK)
+lint-modules: go-mod-tidy
 
 .PHONY: lint
 lint: misspell lint-modules golangci-lint
