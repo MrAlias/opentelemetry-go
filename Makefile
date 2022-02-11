@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-EXAMPLES := $(shell ./get_main_pkgs.sh ./example)
 TOOLS_MOD_DIR := ./internal/tools
 
 # All source code and documents. Used in spell check.
@@ -29,7 +28,7 @@ TIMEOUT = 60
 
 .PHONY: precommit ci
 precommit: dependabot-check license-check misspell go-mod-tidy golangci-lint-fix test-default
-ci: dependabot-check license-check lint build examples test-default check-clean-work-tree test-coverage
+ci: dependabot-check license-check lint build test-default check-clean-work-tree test-coverage
 
 # Tools
 
@@ -73,7 +72,7 @@ tools: $(CROSSLINK) $(GOLANGCI_LINT) $(MISSPELL) $(GOCOVMERGE) $(STRINGER) $(POR
 
 # Build
 
-.PHONY: examples generate build
+.PHONY: generate build
 
 generate: $(OTEL_GO_MOD_DIRS:%=generate/%)
 generate/%: DIR=$*
@@ -96,8 +95,6 @@ build-tests/%:
 		&& $(GO) list ./... \
 		| grep -v third_party \
 		| xargs $(GO) test -vet=off -run xxxxxMatchNothingxxxxx >/dev/null
-
-examples: $(EXAMPLES:%=build/%)
 
 # Tests
 
