@@ -28,13 +28,15 @@ import (
 	"go.opentelemetry.io/otel/exporters/jaeger/internal/third_party/thrift/lib/go/thrift"
 )
 
-const (
-	// udpPacketMaxLength is the max size of UDP packet we want to send, synced with jaeger-agent
-	udpPacketMaxLength = 65000
-	// emitBatchOverhead is the additional overhead bytes used for enveloping the datagram,
-	// synced with jaeger-agent https://github.com/jaegertracing/jaeger-client-go/blob/master/transport_udp.go#L37
-	emitBatchOverhead = 70
-)
+// udpPacketMaxLength is the max size of a UDP packet to send. This is synced
+// with the jaeger-agent.
+const udpPacketMaxLength = 65000
+
+// emitBatchOverhead is the additional overhead bytes used for enveloping the
+// datagram. This is synced with jaeger-agent, see
+// https://github.com/jaegertracing/jaeger-client-go/blob/master/transport_udp.go#L37
+// for the source.
+const emitBatchOverhead = 70
 
 // agentClientUDP is a UDP client to Jaeger agent that implements gen.Agent interface.
 type agentClientUDP struct {

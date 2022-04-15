@@ -30,7 +30,7 @@ dynamically using a SpanProcessor.
 */
 
 var (
-	// owner represents the owner of the application. In this example it is
+	// Owner represents the owner of the application. In this example it is
 	// stored as a simple string, but in real-world use this may be the
 	// response to an asynchronous request.
 	owner    = "unknown"

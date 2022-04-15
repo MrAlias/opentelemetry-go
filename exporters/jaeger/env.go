@@ -18,16 +18,16 @@ import (
 	"os"
 )
 
-// Environment variable names
+// Environment variable names.
 const (
-	// Hostname for the Jaeger agent, part of address where exporter sends spans
-	// i.e.	"localhost"
+	// Hostname for the Jaeger agent, part of address where exporter sends
+	// spans (i.e."localhost").
 	envAgentHost = "OTEL_EXPORTER_JAEGER_AGENT_HOST"
 	// Port for the Jaeger agent, part of address where exporter sends spans
-	// i.e. 6831
+	// (i.e. 6831).
 	envAgentPort = "OTEL_EXPORTER_JAEGER_AGENT_PORT"
-	// The HTTP endpoint for sending spans directly to a collector,
-	// i.e. http://jaeger-collector:14268/api/traces.
+	// The HTTP endpoint for sending spans directly to a collector (i.e.
+	// http://jaeger-collector:14268/api/traces).
 	envEndpoint = "OTEL_EXPORTER_JAEGER_ENDPOINT"
 	// Username to send as part of "Basic" authentication to the collector endpoint.
 	envUser = "OTEL_EXPORTER_JAEGER_USER"
@@ -35,7 +35,7 @@ const (
 	envPassword = "OTEL_EXPORTER_JAEGER_PASSWORD"
 )
 
-// envOr returns an env variable's value if it is exists or the default if not
+// envOr returns an env variable's value if it is exists or the default if not.
 func envOr(key, defaultValue string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v

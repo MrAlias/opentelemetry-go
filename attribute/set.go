@@ -27,11 +27,6 @@ type (
 	//
 	// This type supports the `Equivalent` method of comparison
 	// using values of type `Distinct`.
-	//
-	// This type is used to implement:
-	// 1. Metric labels
-	// 2. Resource sets
-	// 3. Correlation map (TODO)
 	Set struct {
 		equivalent Distinct
 	}
@@ -59,17 +54,15 @@ type (
 	Sortable []KeyValue
 )
 
-var (
-	// keyValueType is used in `computeDistinctReflect`.
-	keyValueType = reflect.TypeOf(KeyValue{})
+// keyValueType is used in `computeDistinctReflect`.
+var keyValueType = reflect.TypeOf(KeyValue{})
 
-	// emptySet is returned for empty label sets.
-	emptySet = &Set{
-		equivalent: Distinct{
-			iface: [0]KeyValue{},
-		},
-	}
-)
+// emptySet is returned for empty label sets.
+var emptySet = &Set{
+	equivalent: Distinct{
+		iface: [0]KeyValue{},
+	},
+}
 
 // EmptySet returns a reference to a Set with no elements.
 //

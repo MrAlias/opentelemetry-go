@@ -25,29 +25,27 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 )
 
-type (
-	// telemetrySDK is a Detector that provides information about
-	// the OpenTelemetry SDK used.  This Detector is included as a
-	// builtin. If these resource attributes are not wanted, use
-	// the WithTelemetrySDK(nil) or WithoutBuiltin() options to
-	// explicitly disable them.
-	telemetrySDK struct{}
+// telemetrySDK is a Detector that provides information about
+// the OpenTelemetry SDK used.  This Detector is included as a
+// builtin. If these resource attributes are not wanted, use
+// the WithTelemetrySDK(nil) or WithoutBuiltin() options to
+// explicitly disable them.
+type telemetrySDK struct{}
 
-	// host is a Detector that provides information about the host
-	// being run on. This Detector is included as a builtin. If
-	// these resource attributes are not wanted, use the
-	// WithHost(nil) or WithoutBuiltin() options to explicitly
-	// disable them.
-	host struct{}
+// host is a Detector that provides information about the host
+// being run on. This Detector is included as a builtin. If
+// these resource attributes are not wanted, use the
+// WithHost(nil) or WithoutBuiltin() options to explicitly
+// disable them.
+type host struct{}
 
-	stringDetector struct {
-		schemaURL string
-		K         attribute.Key
-		F         func() (string, error)
-	}
+type stringDetector struct {
+	schemaURL string
+	K         attribute.Key
+	F         func() (string, error)
+}
 
-	defaultServiceNameDetector struct{}
-)
+type defaultServiceNameDetector struct{}
 
 var (
 	_ Detector = telemetrySDK{}
@@ -92,7 +90,7 @@ func (sd stringDetector) Detect(ctx context.Context) (*Resource, error) {
 	return NewWithAttributes(sd.schemaURL, sd.K.String(value)), nil
 }
 
-// Detect implements Detector
+// Detect implements Detector.
 func (defaultServiceNameDetector) Detect(ctx context.Context) (*Resource, error) {
 	return StringDetector(
 		semconv.SchemaURL,

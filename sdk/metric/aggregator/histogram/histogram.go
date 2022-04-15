@@ -30,38 +30,36 @@ import (
 // (as in the Go prometheus client) that was reverted here:
 // https://github.com/open-telemetry/opentelemetry-go/pull/669
 
-type (
-	// Aggregator observe events and counts them in pre-determined buckets.
-	// It also calculates the sum and count of all events.
-	Aggregator struct {
-		lock       sync.Mutex
-		boundaries []float64
-		kind       number.Kind
-		state      *state
-	}
+// Aggregator observe events and counts them in pre-determined buckets.
+// It also calculates the sum and count of all events.
+type Aggregator struct {
+	lock       sync.Mutex
+	boundaries []float64
+	kind       number.Kind
+	state      *state
+}
 
-	// config describes how the histogram is aggregated.
-	config struct {
-		// explicitBoundaries support arbitrary bucketing schemes.  This
-		// is the general case.
-		explicitBoundaries []float64
-	}
+// config describes how the histogram is aggregated.
+type config struct {
+	// explicitBoundaries support arbitrary bucketing schemes.  This
+	// is the general case.
+	explicitBoundaries []float64
+}
 
-	// Option configures a histogram config.
-	Option interface {
-		// apply sets one or more config fields.
-		apply(*config)
-	}
+// Option configures a histogram config.
+type Option interface {
+	// apply sets one or more config fields.
+	apply(*config)
+}
 
-	// state represents the state of a histogram, consisting of
-	// the sum and counts for all observed values and
-	// the less than equal bucket count for the pre-determined boundaries.
-	state struct {
-		bucketCounts []uint64
-		sum          number.Number
-		count        uint64
-	}
-)
+// state represents the state of a histogram, consisting of
+// the sum and counts for all observed values and
+// the less than equal bucket count for the pre-determined boundaries.
+type state struct {
+	bucketCounts []uint64
+	sum          number.Number
+	count        uint64
+}
 
 // WithExplicitBoundaries sets the ExplicitBoundaries configuration option of a config.
 func WithExplicitBoundaries(explicitBoundaries []float64) Option {
@@ -88,7 +86,7 @@ var defaultFloat64ExplicitBoundaries = []float64{.005, .01, .025, .05, .1, .25, 
 const defaultInt64ExplicitBoundaryMultiplier = 1e6
 
 // defaultInt64ExplicitBoundaries applies a multiplier to the default
-// float64 boundaries: [ 5K, 10K, 25K, ..., 2.5M, 5M, 10M ]
+// float64 boundaries: [ 5K, 10K, 25K, ..., 2.5M, 5M, 10M ].
 var defaultInt64ExplicitBoundaries = func(bounds []float64) (asint []float64) {
 	for _, f := range bounds {
 		asint = append(asint, defaultInt64ExplicitBoundaryMultiplier*f)

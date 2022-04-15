@@ -24,28 +24,24 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 )
 
-const (
-	// resourceAttrKey is the environment variable name OpenTelemetry Resource information will be read from.
-	resourceAttrKey = "OTEL_RESOURCE_ATTRIBUTES"
+// resourceAttrKey is the environment variable name OpenTelemetry Resource information will be read from.
+const resourceAttrKey = "OTEL_RESOURCE_ATTRIBUTES"
 
-	// svcNameKey is the environment variable name that Service Name information will be read from.
-	svcNameKey = "OTEL_SERVICE_NAME"
-)
+// svcNameKey is the environment variable name that Service Name information will be read from.
+const svcNameKey = "OTEL_SERVICE_NAME"
 
-var (
-	// errMissingValue is returned when a resource value is missing.
-	errMissingValue = fmt.Errorf("%w: missing value", ErrPartialResource)
-)
+// errMissingValue is returned when a resource value is missing.
+var errMissingValue = fmt.Errorf("%w: missing value", ErrPartialResource)
 
 // fromEnv is a Detector that implements the Detector and collects
 // resources from environment.  This Detector is included as a
 // builtin.
 type fromEnv struct{}
 
-// compile time assertion that FromEnv implements Detector interface
+// Compile time assertion that FromEnv implements Detector interface.
 var _ Detector = fromEnv{}
 
-// Detect collects resources from environment
+// Detect collects resources from environment.
 func (fromEnv) Detect(context.Context) (*Resource, error) {
 	attrs := strings.TrimSpace(os.Getenv(resourceAttrKey))
 	svcName := strings.TrimSpace(os.Getenv(svcNameKey))

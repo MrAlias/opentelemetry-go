@@ -18,13 +18,12 @@ import (
 	"sync/atomic"
 )
 
-// refcountMapped atomically counts the number of references (usages) of an entry
-// while also keeping a state of mapped/unmapped into a different data structure
-// (an external map or list for example).
-//
-// refcountMapped uses an atomic value where the least significant bit is used to
-// keep the state of mapping ('1' is used for unmapped and '0' is for mapped) and
-// the rest of the bits are used for refcounting.
+// refcountMapped atomically counts the number of references (usages) of an
+// entry while also keeping a state of mapped/unmapped into a different data
+// structure (an external map or list for example). It uses an atomic value
+// where the least significant bit is used to keep the state of mapping ('1'
+// is used for unmapped and '0' is for mapped) and the rest of the bits are
+// used for refcounting.
 type refcountMapped struct {
 	// refcount has to be aligned for 64-bit atomic operations.
 	value int64

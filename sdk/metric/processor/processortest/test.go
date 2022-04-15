@@ -33,63 +33,61 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-type (
-	// mapKey is the unique key for a metric, consisting of its
-	// unique descriptor, distinct labels, and distinct resource
-	// attributes.
-	mapKey struct {
-		desc     *sdkapi.Descriptor
-		labels   attribute.Distinct
-		resource attribute.Distinct
-	}
+// mapKey is the unique key for a metric, consisting of its
+// unique descriptor, distinct labels, and distinct resource
+// attributes.
+type mapKey struct {
+	desc     *sdkapi.Descriptor
+	labels   attribute.Distinct
+	resource attribute.Distinct
+}
 
-	// mapValue is value stored in a processor used to produce a
-	// Reader.
-	mapValue struct {
-		labels     *attribute.Set
-		resource   *resource.Resource
-		aggregator aggregator.Aggregator
-	}
+// mapValue is value stored in a processor used to produce a
+// Reader.
+type mapValue struct {
+	labels     *attribute.Set
+	resource   *resource.Resource
+	aggregator aggregator.Aggregator
+}
 
-	// Output implements export.Reader.
-	Output struct {
-		m            map[mapKey]mapValue
-		labelEncoder attribute.Encoder
-		sync.RWMutex
-	}
+// Output implements export.Reader.
+type Output struct {
+	m            map[mapKey]mapValue
+	labelEncoder attribute.Encoder
+	sync.RWMutex
+}
 
-	// testAggregatorSelector returns aggregators consistent with
-	// the test variables below, needed for testing stateful
-	// processors, which clone Aggregators using AggregatorFor(desc).
-	testAggregatorSelector struct{}
+// testAggregatorSelector returns aggregators consistent with
+// the test variables below, needed for testing stateful
+// processors, which clone Aggregators using AggregatorFor(desc).
+type testAggregatorSelector struct{}
 
-	// testCheckpointer is a export.Checkpointer.
-	testCheckpointer struct {
-		started  int
-		finished int
-		*Processor
-	}
+// testCheckpointer is a export.Checkpointer.
+type testCheckpointer struct {
+	started  int
+	finished int
+	*Processor
+}
 
-	// Processor is a testing implementation of export.Processor that
-	// assembles its results as a map[string]float64.
-	Processor struct {
-		export.AggregatorSelector
-		output *Output
-	}
+// Processor is a testing implementation of export.Processor that
+// assembles its results as a map[string]float64.
+type Processor struct {
+	export.AggregatorSelector
+	output *Output
+}
 
-	// Exporter is a testing implementation of export.Exporter that
-	// assembles its results as a map[string]float64.
-	Exporter struct {
-		aggregation.TemporalitySelector
-		output      *Output
-		exportCount int
+// Exporter is a testing implementation of export.Exporter that
+// assembles its results as a map[string]float64.
+type Exporter struct {
+	aggregation.TemporalitySelector
+	output      *Output
+	exportCount int
 
-		// InjectErr supports returning conditional errors from
-		// the Export() routine.  This must be set before the
-		// Exporter is first used.
-		InjectErr func(export.Record) error
-	}
-)
+	// InjectErr supports returning conditional errors from
+	// the Export() routine.  This must be set before the
+	// Exporter is first used.
+	InjectErr func(export.Record) error
+}
 
 type testFactory struct {
 	selector export.AggregatorSelector

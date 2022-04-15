@@ -30,99 +30,97 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/sdkapi"
 )
 
-type (
-	// Accumulator implements the OpenTelemetry Meter API.  The
-	// Accumulator is bound to a single export.Processor in
-	// `NewAccumulator()`.
-	//
-	// The Accumulator supports a Collect() API to gather and export
-	// current data.  Collect() should be arranged according to
-	// the processor model.  Push-based processors will setup a
-	// timer to call Collect() periodically.  Pull-based processors
-	// will call Collect() when a pull request arrives.
-	Accumulator struct {
-		// current maps `mapkey` to *record.
-		current sync.Map
+// Accumulator implements the OpenTelemetry Meter API.  The
+// Accumulator is bound to a single export.Processor in
+// `NewAccumulator()`.
+//
+// The Accumulator supports a Collect() API to gather and export
+// current data.  Collect() should be arranged according to
+// the processor model.  Push-based processors will setup a
+// timer to call Collect() periodically.  Pull-based processors
+// will call Collect() when a pull request arrives.
+type Accumulator struct {
+	// current maps `mapkey` to *record.
+	current sync.Map
 
-		callbackLock sync.Mutex
-		callbacks    map[*callback]struct{}
+	callbackLock sync.Mutex
+	callbacks    map[*callback]struct{}
 
-		// currentEpoch is the current epoch number. It is
-		// incremented in `Collect()`.
-		currentEpoch int64
+	// currentEpoch is the current epoch number. It is
+	// incremented in `Collect()`.
+	currentEpoch int64
 
-		// processor is the configured processor+configuration.
-		processor export.Processor
+	// processor is the configured processor+configuration.
+	processor export.Processor
 
-		// collectLock prevents simultaneous calls to Collect().
-		collectLock sync.Mutex
-	}
+	// collectLock prevents simultaneous calls to Collect().
+	collectLock sync.Mutex
+}
 
-	callback struct {
-		insts map[*asyncInstrument]struct{}
-		f     func(context.Context)
-	}
+type callback struct {
+	insts map[*asyncInstrument]struct{}
+	f     func(context.Context)
+}
 
-	asyncContextKey struct{}
+type asyncContextKey struct{}
 
-	asyncInstrument struct {
-		baseInstrument
-		instrument.Asynchronous
-	}
+type asyncInstrument struct {
+	baseInstrument
+	instrument.Asynchronous
+}
 
-	syncInstrument struct {
-		baseInstrument
-		instrument.Synchronous
-	}
+type syncInstrument struct {
+	baseInstrument
+	instrument.Synchronous
+}
 
-	// mapkey uniquely describes a metric instrument in terms of
-	// its InstrumentID and the encoded form of its labels.
-	mapkey struct {
-		descriptor *sdkapi.Descriptor
-		ordered    attribute.Distinct
-	}
+// mapkey uniquely describes a metric instrument in terms of
+// its InstrumentID and the encoded form of its labels.
+type mapkey struct {
+	descriptor *sdkapi.Descriptor
+	ordered    attribute.Distinct
+}
 
-	// record maintains the state of one metric instrument.  Due
-	// the use of lock-free algorithms, there may be more than one
-	// `record` in existence at a time, although at most one can
-	// be referenced from the `Accumulator.current` map.
-	record struct {
-		// refMapped keeps track of refcounts and the mapping state to the
-		// Accumulator.current map.
-		refMapped refcountMapped
+// record maintains the state of one metric instrument.  Due
+// the use of lock-free algorithms, there may be more than one
+// `record` in existence at a time, although at most one can
+// be referenced from the `Accumulator.current` map.
+type record struct {
+	// refMapped keeps track of refcounts and the mapping state to the
+	// Accumulator.current map.
+	refMapped refcountMapped
 
-		// updateCount is incremented on every Update.
-		updateCount int64
+	// updateCount is incremented on every Update.
+	updateCount int64
 
-		// collectedCount is set to updateCount on collection,
-		// supports checking for no updates during a round.
-		collectedCount int64
+	// collectedCount is set to updateCount on collection,
+	// supports checking for no updates during a round.
+	collectedCount int64
 
-		// labels is the stored label set for this record,
-		// except in cases where a label set is shared due to
-		// batch recording.
-		labels attribute.Set
+	// labels is the stored label set for this record,
+	// except in cases where a label set is shared due to
+	// batch recording.
+	labels attribute.Set
 
-		// sortSlice has a single purpose - as a temporary
-		// place for sorting during labels creation to avoid
-		// allocation.
-		sortSlice attribute.Sortable
+	// sortSlice has a single purpose - as a temporary
+	// place for sorting during labels creation to avoid
+	// allocation.
+	sortSlice attribute.Sortable
 
-		// inst is a pointer to the corresponding instrument.
-		inst *baseInstrument
+	// inst is a pointer to the corresponding instrument.
+	inst *baseInstrument
 
-		// current implements the actual RecordOne() API,
-		// depending on the type of aggregation.  If nil, the
-		// metric was disabled by the exporter.
-		current    aggregator.Aggregator
-		checkpoint aggregator.Aggregator
-	}
+	// current implements the actual RecordOne() API,
+	// depending on the type of aggregation.  If nil, the
+	// metric was disabled by the exporter.
+	current    aggregator.Aggregator
+	checkpoint aggregator.Aggregator
+}
 
-	baseInstrument struct {
-		meter      *Accumulator
-		descriptor sdkapi.Descriptor
-	}
-)
+type baseInstrument struct {
+	meter      *Accumulator
+	descriptor sdkapi.Descriptor
+}
 
 var (
 	_ sdkapi.MeterImpl = &Accumulator{}

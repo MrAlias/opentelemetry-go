@@ -20,13 +20,13 @@ import (
 	"sync"
 )
 
-var (
-	// globalErrorHandler provides an ErrorHandler that can be used
-	// throughout an OpenTelemetry instrumented project. When a user
-	// specified ErrorHandler is registered (`SetErrorHandler`) all calls to
-	// `Handle` and will be delegated to the registered ErrorHandler.
-	globalErrorHandler = defaultErrorHandler()
+// globalErrorHandler provides an ErrorHandler that can be used throughout an
+// OpenTelemetry instrumented project. When a user specified ErrorHandler is
+// registered (SetErrorHandler) all calls to Handle and will be delegated to
+// the registered ErrorHandler.
+var globalErrorHandler = defaultErrorHandler()
 
+var (
 	// Compile-time check that delegator implements ErrorHandler.
 	_ ErrorHandler = (*delegator)(nil)
 	// Compile-time check that errLogger implements ErrorHandler.
@@ -92,7 +92,7 @@ func SetErrorHandler(h ErrorHandler) {
 	globalErrorHandler.setDelegate(h)
 }
 
-// Handle is a convenience function for ErrorHandler().Handle(err)
+// Handle is a convenience function for ErrorHandler().Handle(err).
 func Handle(err error) {
 	GetErrorHandler().Handle(err)
 }

@@ -20,40 +20,38 @@ import (
 	"sync/atomic"
 )
 
-type (
-	// Encoder is a mechanism for serializing a label set into a
-	// specific string representation that supports caching, to
-	// avoid repeated serialization. An example could be an
-	// exporter encoding the label set into a wire representation.
-	Encoder interface {
-		// Encode returns the serialized encoding of the label
-		// set using its Iterator.  This result may be cached
-		// by a attribute.Set.
-		Encode(iterator Iterator) string
+// Encoder is a mechanism for serializing a label set into a
+// specific string representation that supports caching, to
+// avoid repeated serialization. An example could be an
+// exporter encoding the label set into a wire representation.
+type Encoder interface {
+	// Encode returns the serialized encoding of the label
+	// set using its Iterator.  This result may be cached
+	// by a attribute.Set.
+	Encode(iterator Iterator) string
 
-		// ID returns a value that is unique for each class of
-		// label encoder.  Label encoders allocate these using
-		// `NewEncoderID`.
-		ID() EncoderID
-	}
+	// ID returns a value that is unique for each class of
+	// label encoder.  Label encoders allocate these using
+	// `NewEncoderID`.
+	ID() EncoderID
+}
 
-	// EncoderID is used to identify distinct Encoder
-	// implementations, for caching encoded results.
-	EncoderID struct {
-		value uint64
-	}
+// EncoderID is used to identify distinct Encoder
+// implementations, for caching encoded results.
+type EncoderID struct {
+	value uint64
+}
 
-	// defaultLabelEncoder uses a sync.Pool of buffers to reduce
-	// the number of allocations used in encoding labels.  This
-	// implementation encodes a comma-separated list of key=value,
-	// with '/'-escaping of '=', ',', and '\'.
-	defaultLabelEncoder struct {
-		// pool is a pool of labelset builders.  The buffers in this
-		// pool grow to a size that most label encodings will not
-		// allocate new memory.
-		pool sync.Pool // *bytes.Buffer
-	}
-)
+// defaultLabelEncoder uses a sync.Pool of buffers to reduce
+// the number of allocations used in encoding labels.  This
+// implementation encodes a comma-separated list of key=value,
+// with '/'-escaping of '=', ',', and '\'.
+type defaultLabelEncoder struct {
+	// pool is a pool of labelset builders.  The buffers in this
+	// pool grow to a size that most label encodings will not
+	// allocate new memory.
+	pool sync.Pool // *bytes.Buffer
+}
 
 // escapeChar is used to ensure uniqueness of the label encoding where
 // keys or values contain either '=' or ','.  Since there is no parser
@@ -62,12 +60,11 @@ type (
 // (e.g., stdout), so the backslash ('\') is used as a conventional choice.
 const escapeChar = '\\'
 
+// encoderIDCounter is for generating IDs for other label encoders.
+var encoderIDCounter uint64
+
 var (
 	_ Encoder = &defaultLabelEncoder{}
-
-	// encoderIDCounter is for generating IDs for other label
-	// encoders.
-	encoderIDCounter uint64
 
 	defaultEncoderOnce     sync.Once
 	defaultEncoderID       = NewEncoderID()

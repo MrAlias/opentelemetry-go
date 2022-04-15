@@ -38,7 +38,7 @@ const supportedFormatMinor = 0
 var supportedFormatMajorMinor = strconv.Itoa(supportedFormatMajor) + "." +
 	strconv.Itoa(supportedFormatMinor) // 1.0
 
-// ParseFile a schema file. schemaFilePath is the file path.
+// ParseFile a schema file. SchemaFilePath is the file path.
 func ParseFile(schemaFilePath string) (*ast.Schema, error) {
 	file, err := os.Open(schemaFilePath)
 	if err != nil {
@@ -47,7 +47,7 @@ func ParseFile(schemaFilePath string) (*ast.Schema, error) {
 	return Parse(file)
 }
 
-// Parse a schema file. schemaFileContent is the readable content of the schema file.
+// Parse a schema file. SchemaFileContent is the readable content of the schema file.
 func Parse(schemaFileContent io.Reader) (*ast.Schema, error) {
 	var ts ast.Schema
 	d := yaml.NewDecoder(schemaFileContent)

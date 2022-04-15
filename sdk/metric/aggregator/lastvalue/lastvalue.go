@@ -26,29 +26,26 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/sdkapi"
 )
 
-type (
+// Aggregator aggregates lastValue events.
+type Aggregator struct {
+	// value is an atomic pointer to *lastValueData.  It is never nil.
+	value unsafe.Pointer
+}
 
-	// Aggregator aggregates lastValue events.
-	Aggregator struct {
-		// value is an atomic pointer to *lastValueData.  It is never nil.
-		value unsafe.Pointer
-	}
+// lastValueData stores the current value of a lastValue along with
+// a sequence number to determine the winner of a race.
+type lastValueData struct {
+	// value is the int64- or float64-encoded Set() data
+	//
+	// value needs to be aligned for 64-bit atomic operations.
+	value number.Number
 
-	// lastValueData stores the current value of a lastValue along with
-	// a sequence number to determine the winner of a race.
-	lastValueData struct {
-		// value is the int64- or float64-encoded Set() data
-		//
-		// value needs to be aligned for 64-bit atomic operations.
-		value number.Number
-
-		// timestamp indicates when this record was submitted.
-		// this can be used to pick a winner when multiple
-		// records contain lastValue data for the same labels due
-		// to races.
-		timestamp time.Time
-	}
-)
+	// timestamp indicates when this record was submitted.
+	// this can be used to pick a winner when multiple
+	// records contain lastValue data for the same labels due
+	// to races.
+	timestamp time.Time
+}
 
 var _ aggregator.Aggregator = &Aggregator{}
 var _ aggregation.LastValue = &Aggregator{}
