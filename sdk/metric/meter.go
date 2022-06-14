@@ -120,12 +120,42 @@ func (m *meter) RegisterCallback(insts []instrument.Asynchronous, f func(context
 
 // SyncInt64 returns the synchronous integer instrument provider.
 func (m *meter) SyncInt64() syncint64.InstrumentProvider {
-	// TODO (#2814): implement.
-	return nil
+	return (*syncInt64Provider)(m)
 }
 
 // SyncFloat64 returns the synchronous floating-point instrument provider.
 func (m *meter) SyncFloat64() syncfloat64.InstrumentProvider {
-	// TODO (#2814): implement.
-	return nil
+	return (*syncFloat64Provider)(m)
+}
+
+// syncInt64Provider wraps a meter so it implements the
+// syncint64.InstrumentProvider API.
+type syncInt64Provider meter
+
+func (p *syncInt64Provider) Counter(name string, opts ...instrument.Option) (syncint64.Counter, error) {
+	return newCounter[int64](name, opts), nil
+}
+
+func (p *syncInt64Provider) UpDownCounter(name string, opts ...instrument.Option) (syncint64.UpDownCounter, error) {
+	return newUpDownCounter[int64](name, opts), nil
+}
+
+func (p *syncInt64Provider) Histogram(name string, opts ...instrument.Option) (syncint64.Histogram, error) {
+	return newHistogram[int64](name, opts), nil
+}
+
+// syncFloat64Provider wraps a meter so it implements the
+// syncfloat64.InstrumentProvider API.
+type syncFloat64Provider meter
+
+func (p *syncFloat64Provider) Counter(name string, opts ...instrument.Option) (syncfloat64.Counter, error) {
+	return newCounter[float64](name, opts), nil
+}
+
+func (p *syncFloat64Provider) UpDownCounter(name string, opts ...instrument.Option) (syncfloat64.UpDownCounter, error) {
+	return newUpDownCounter[float64](name, opts), nil
+}
+
+func (p *syncFloat64Provider) Histogram(name string, opts ...instrument.Option) (syncfloat64.Histogram, error) {
+	return newHistogram[float64](name, opts), nil
 }
