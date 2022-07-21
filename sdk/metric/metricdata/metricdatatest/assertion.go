@@ -20,7 +20,9 @@
 package metricdatatest // import "go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
 
 import (
+	"bytes"
 	"fmt"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -39,30 +41,48 @@ type Datatypes interface {
 func AssertEqual[T Datatypes](t *testing.T, expected, actual T) bool {
 	t.Helper()
 
-	// Generic types cannot be type asserted. Use an interface instead.
-	aIface := interface{}(actual)
+	var (
+		r    []string
+		name string
 
-	var r []string
+		// Generic types cannot be type asserted. Use an interface instead.
+		aIface = interface{}(actual)
+	)
+
 	switch e := interface{}(expected).(type) {
 	case metricdata.DataPoint:
+		name = "DataPoints"
 		r = equalDataPoints(e, aIface.(metricdata.DataPoint))
 	case metricdata.Float64:
+		name = "Float64s"
 		r = equalFloat64(e, aIface.(metricdata.Float64))
 	case metricdata.Gauge:
+		name = "Gauges"
 		r = equalGauges(e, aIface.(metricdata.Gauge))
 	case metricdata.Histogram:
+		name = "Histograms"
 		r = equalHistograms(e, aIface.(metricdata.Histogram))
 	case metricdata.HistogramDataPoint:
+		name = "HistogramDataPoints"
 		r = equalHistogramDataPoints(e, aIface.(metricdata.HistogramDataPoint))
 	case metricdata.Int64:
+		name = "Int64s"
 		r = equalInt64(e, aIface.(metricdata.Int64))
 	case metricdata.Metrics:
+		name = "Metrics"
 		r = equalMetrics(e, aIface.(metricdata.Metrics))
 	case metricdata.ResourceMetrics:
-		r = equalResourceMetrics(e, aIface.(metricdata.ResourceMetrics))
+		name = "ResourceMetrics"
+		c := equalResourceMetrics(e, aIface.(metricdata.ResourceMetrics))
+		if c.Failed() {
+			t.Error(c.String())
+			return false
+		}
 	case metricdata.ScopeMetrics:
+		name = "ScopeMetrics"
 		r = equalScopeMetrics(e, aIface.(metricdata.ScopeMetrics))
 	case metricdata.Sum:
+		name = "Sums"
 		r = equalSums(e, aIface.(metricdata.Sum))
 	default:
 		// We control all types passed to this, panic to signal developers
@@ -70,28 +90,28 @@ func AssertEqual[T Datatypes](t *testing.T, expected, actual T) bool {
 		panic(fmt.Sprintf("unknown types: %T", expected))
 	}
 
-	if len(r) > 0 {
-		t.Error(r)
-		return false
-	}
-	return true
+	return tError(t, name, r)
 }
 
 // AssertAggregationsEqual asserts that two Aggregations are equal.
 func AssertAggregationsEqual(t *testing.T, expected, actual metricdata.Aggregation) bool {
 	t.Helper()
-	if r := equalAggregations(expected, actual); len(r) > 0 {
-		t.Error(r)
-		return false
-	}
-	return true
+	return tError(t, "Aggregations", equalAggregations(expected, actual))
 }
 
 // AssertValuesEqual asserts that two Values are equal.
 func AssertValuesEqual(t *testing.T, expected, actual metricdata.Value) bool {
 	t.Helper()
-	if r := equalValues(expected, actual); len(r) > 0 {
-		t.Error(r)
+	return tError(t, "Values", equalValues(expected, actual))
+}
+
+func tError(t *testing.T, name string, reasons []string) bool {
+	t.Helper()
+	if len(reasons) > 0 {
+		var msg bytes.Buffer
+		_, _ = msg.WriteString(fmt.Sprintf("%s not equal:\n", name))
+		_, _ = msg.WriteString(strings.Join(reasons, "\n\n"))
+		t.Error(msg.String())
 		return false
 	}
 	return true

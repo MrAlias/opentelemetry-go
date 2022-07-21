@@ -22,32 +22,175 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/davecgh/go-spew/spew"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
+
+var spewConfig = spew.ConfigState{
+	Indent:                  " ",
+	DisablePointerAddresses: true,
+	DisableCapacities:       true,
+	SortKeys:                true,
+	MaxDepth:                10,
+}
+
+type failure interface {
+	SetIndent(string)
+	String() string
+}
+
+type equalityFailure struct {
+	name     string
+	indent   string
+	esc      string
+	expected any
+	actual   any
+}
+
+func (f *equalityFailure) SetIndent(indent string) {
+	f.indent = indent
+}
+
+func (f *equalityFailure) String() string {
+	format := fmt.Sprintf(
+		"%[1]s%%s not equal:\n%[1]s%[1]sexpected: %[2]s\n%[1]s%[1]sactual: %[2]s",
+		f.indent, f.esc,
+	)
+	return fmt.Sprintf(format, f.name, f.expected, f.actual)
+}
+
+type diffFailure struct {
+	name    string
+	indent  string
+	missing string
+	extra   string
+}
+
+func (f *diffFailure) SetIndent(indent string) {
+	f.indent = indent
+}
+
+func (f *diffFailure) String() string {
+	var msg bytes.Buffer
+	msg.WriteString(f.indent)
+	msg.WriteString(f.name)
+	msg.WriteString(" do not contain the same values:")
+	if len(f.missing) > 0 {
+		msg.WriteString("\n")
+		msg.WriteString(f.indent)
+		msg.WriteString(f.indent)
+		msg.WriteString("missing expected values: ")
+		msg.WriteString(f.missing)
+	}
+	if len(f.extra) > 0 {
+		msg.WriteString("\n")
+		msg.WriteString(f.indent)
+		msg.WriteString(f.indent)
+		msg.WriteString("unexpected additional values: ")
+		msg.WriteString(f.extra)
+	}
+	return msg.String()
+}
+
+type strFailure struct {
+	name   string
+	indent string
+	str    string
+}
+
+func (f *strFailure) SetIndent(indent string) {
+	f.indent = indent
+}
+
+func (f *strFailure) String() string {
+	return fmt.Sprintf("%s%s: %s", f.indent, f.name, f.str)
+}
+
+type comparison struct {
+	object string
+
+	failures []failure
+}
+
+func newComparison(object string) comparison {
+	return comparison{object: object}
+}
+
+func (c *comparison) String() string {
+	if len(c.failures) == 0 {
+		return ""
+	}
+
+	var msg bytes.Buffer
+	msg.WriteString(c.object)
+	msg.WriteString(":\n")
+	for _, f := range c.failures {
+		msg.WriteString(f.String())
+	}
+	return msg.String()
+}
+
+func (c *comparison) AddComparison(other comparison) {
+	if !other.Failed() {
+		return
+	}
+
+	for _, f := range other.failures {
+		f.SetIndent("\t\t")
+		c.failures = append(c.failures, &strFailure{
+			name:   other.object,
+			indent: "\t",
+			str:    f.String(),
+		})
+	}
+}
+
+func (c *comparison) AddFailure(f failure) {
+	if f != nil {
+		f.SetIndent("\t")
+		c.failures = append(c.failures, f)
+	}
+}
+
+func (c *comparison) NotEqual(name string, esc string, expected, actual any) {
+	c.failures = append(c.failures, &equalityFailure{
+		name:     name,
+		indent:   "\t",
+		esc:      esc,
+		expected: expected,
+		actual:   actual,
+	})
+}
+
+func (c *comparison) NotEqualV(name string, expected, actual any) {
+	c.NotEqual(name, "%v", expected, actual)
+}
+
+func (c *comparison) Failed() bool {
+	return len(c.failures) > 0
+}
 
 // equalResourceMetrics returns reasons ResourceMetrics are not equal. If they
 // are equal, the returned reasons will be empty.
 //
 // The ScopeMetrics each ResourceMetrics contains are compared based on
 // containing the same ScopeMetrics, not the order they are stored in.
-func equalResourceMetrics(a, b metricdata.ResourceMetrics) (reasons []string) {
+func equalResourceMetrics(a, b metricdata.ResourceMetrics) comparison {
+	c := newComparison("ResourceMetrics")
 	if !a.Resource.Equal(b.Resource) {
-		reasons = append(reasons, notEqualStr("Resources", a.Resource, b.Resource))
+		c.NotEqualV("Resources", a.Resource, b.Resource)
 	}
 
-	r := compareDiff(diffSlices(
+	c.AddFailure(fmtDiff(diffSlices(
 		a.ScopeMetrics,
 		b.ScopeMetrics,
 		func(a, b metricdata.ScopeMetrics) bool {
-			r := equalScopeMetrics(a, b)
-			return len(r) == 0
+			c := equalScopeMetrics(a, b)
+			return !c.Failed()
 		},
-	))
-	if r != "" {
-		reasons = append(reasons, fmt.Sprintf("ResourceMetrics ScopeMetrics not equal:\n%s", r))
-	}
-	return reasons
+	))("ScopeMetrics"))
+	return c
 }
 
 // equalScopeMetrics returns reasons ScopeMetrics are not equal. If they are
@@ -55,12 +198,13 @@ func equalResourceMetrics(a, b metricdata.ResourceMetrics) (reasons []string) {
 //
 // The Metrics each ScopeMetrics contains are compared based on containing the
 // same Metrics, not the order they are stored in.
-func equalScopeMetrics(a, b metricdata.ScopeMetrics) (reasons []string) {
+func equalScopeMetrics(a, b metricdata.ScopeMetrics) comparison {
+	c := newComparison("ScopeMetrics")
 	if a.Scope != b.Scope {
-		reasons = append(reasons, notEqualStr("Scope", a.Scope, b.Scope))
+		reasons = append(reasons, notEqStrV("Scope", a.Scope, b.Scope))
 	}
 
-	r := compareDiff(diffSlices(
+	r := fmtDiff(diffSlices(
 		a.Metrics,
 		b.Metrics,
 		func(a, b metricdata.Metrics) bool {
@@ -71,20 +215,21 @@ func equalScopeMetrics(a, b metricdata.ScopeMetrics) (reasons []string) {
 	if r != "" {
 		reasons = append(reasons, fmt.Sprintf("ScopeMetrics Metrics not equal:\n%s", r))
 	}
-	return reasons
+	return c
 }
 
 // equalMetrics returns reasons Metrics are not equal. If they are equal, the
 // returned reasons will be empty.
-func equalMetrics(a, b metricdata.Metrics) (reasons []string) {
+func equalMetrics(a, b metricdata.Metrics) comparison {
+	c := newComparison("Metrics")
 	if a.Name != b.Name {
-		reasons = append(reasons, notEqualStr("Name", a.Name, b.Name))
+		reasons = append(reasons, notEqStrV("Name", a.Name, b.Name))
 	}
 	if a.Description != b.Description {
-		reasons = append(reasons, notEqualStr("Description", a.Description, b.Description))
+		reasons = append(reasons, notEqStrV("Description", a.Description, b.Description))
 	}
 	if a.Unit != b.Unit {
-		reasons = append(reasons, notEqualStr("Unit", a.Unit, b.Unit))
+		reasons = append(reasons, notEqStrV("Unit", a.Unit, b.Unit))
 	}
 
 	r := equalAggregations(a.Data, b.Data)
@@ -92,15 +237,16 @@ func equalMetrics(a, b metricdata.Metrics) (reasons []string) {
 		reasons = append(reasons, "Metrics Data not equal:")
 		reasons = append(reasons, r...)
 	}
-	return reasons
+	return c
 }
 
 // equalAggregations returns reasons a and b are not equal. If they are equal,
 // the returned reasons will be empty.
-func equalAggregations(a, b metricdata.Aggregation) (reasons []string) {
+func equalAggregations(a, b metricdata.Aggregation) comparison {
+	c := newComparison("Aggregation")
 	if a == nil || b == nil {
 		if a != b {
-			return []string{notEqualStr("Aggregation", a, b)}
+			return []string{notEqStrV("Aggregation", a, b)}
 		}
 		return reasons
 	}
@@ -113,25 +259,25 @@ func equalAggregations(a, b metricdata.Aggregation) (reasons []string) {
 	case metricdata.Gauge:
 		r := equalGauges(v, b.(metricdata.Gauge))
 		if len(r) > 0 {
-			reasons = append(reasons, "Gauge not equal:")
+			r[0] = fmt.Sprintf("Gauge: %s", r[0])
 			reasons = append(reasons, r...)
 		}
 	case metricdata.Sum:
 		r := equalSums(v, b.(metricdata.Sum))
 		if len(r) > 0 {
-			reasons = append(reasons, "Sum not equal:")
+			r[0] = fmt.Sprintf("Sum: %s", r[0])
 			reasons = append(reasons, r...)
 		}
 	case metricdata.Histogram:
 		r := equalHistograms(v, b.(metricdata.Histogram))
 		if len(r) > 0 {
-			reasons = append(reasons, "Histogram not equal:")
+			r[0] = fmt.Sprintf("Histogram: %s", r[0])
 			reasons = append(reasons, r...)
 		}
 	default:
 		reasons = append(reasons, fmt.Sprintf("Aggregation of unknown types %T", a))
 	}
-	return reasons
+	return c
 }
 
 // equalGauges returns reasons Gauges are not equal. If they are equal, the
@@ -139,8 +285,9 @@ func equalAggregations(a, b metricdata.Aggregation) (reasons []string) {
 //
 // The DataPoints each Gauge contains are compared based on containing the
 // same DataPoints, not the order they are stored in.
-func equalGauges(a, b metricdata.Gauge) (reasons []string) {
-	r := compareDiff(diffSlices(
+func equalGauges(a, b metricdata.Gauge) comparison {
+	c := newComparison("Gauge")
+	r := fmtDiff(diffSlices(
 		a.DataPoints,
 		b.DataPoints,
 		func(a, b metricdata.DataPoint) bool {
@@ -151,7 +298,7 @@ func equalGauges(a, b metricdata.Gauge) (reasons []string) {
 	if r != "" {
 		reasons = append(reasons, fmt.Sprintf("Gauge DataPoints not equal:\n%s", r))
 	}
-	return reasons
+	return c
 }
 
 // equalSums returns reasons Sums are not equal. If they are equal, the
@@ -159,15 +306,16 @@ func equalGauges(a, b metricdata.Gauge) (reasons []string) {
 //
 // The DataPoints each Sum contains are compared based on containing the same
 // DataPoints, not the order they are stored in.
-func equalSums(a, b metricdata.Sum) (reasons []string) {
+func equalSums(a, b metricdata.Sum) comparison {
+	c := newComparison("Sum")
 	if a.Temporality != b.Temporality {
-		reasons = append(reasons, notEqualStr("Temporality", a.Temporality, b.Temporality))
+		reasons = append(reasons, notEqStrV("Temporality", a.Temporality, b.Temporality))
 	}
 	if a.IsMonotonic != b.IsMonotonic {
-		reasons = append(reasons, notEqualStr("IsMonotonic", a.IsMonotonic, b.IsMonotonic))
+		reasons = append(reasons, notEqStrV("IsMonotonic", a.IsMonotonic, b.IsMonotonic))
 	}
 
-	r := compareDiff(diffSlices(
+	r := fmtDiff(diffSlices(
 		a.DataPoints,
 		b.DataPoints,
 		func(a, b metricdata.DataPoint) bool {
@@ -186,141 +334,132 @@ func equalSums(a, b metricdata.Sum) (reasons []string) {
 //
 // The DataPoints each Histogram contains are compared based on containing the
 // same HistogramDataPoint, not the order they are stored in.
-func equalHistograms(a, b metricdata.Histogram) (reasons []string) {
+func equalHistograms(a, b metricdata.Histogram) comparison {
+	c := newComparison("Histogram")
 	if a.Temporality != b.Temporality {
-		reasons = append(reasons, notEqualStr("Temporality", a.Temporality, b.Temporality))
+		c.NotEqualV("Temporality", a.Temporality, b.Temporality)
 	}
 
-	r := compareDiff(diffSlices(
+	c.AddFailure(fmtDiff(diffSlices(
 		a.DataPoints,
 		b.DataPoints,
 		func(a, b metricdata.HistogramDataPoint) bool {
-			r := equalHistogramDataPoints(a, b)
-			return len(r) == 0
+			c := equalHistogramDataPoints(a, b)
+			return !c.Failed()
 		},
-	))
-	if r != "" {
-		reasons = append(reasons, fmt.Sprintf("Histogram DataPoints not equal:\n%s", r))
-	}
-	return reasons
+	))("HistogramDataPoints"))
+	return c
 }
 
 // equalDataPoints returns reasons DataPoints are not equal. If they are
 // equal, the returned reasons will be empty.
-func equalDataPoints(a, b metricdata.DataPoint) (reasons []string) {
+func equalDataPoints(a, b metricdata.DataPoint) comparison {
+	c := newComparison("DataPoint")
 	if !a.Attributes.Equals(&b.Attributes) {
-		reasons = append(reasons, notEqualStr(
-			"Attributes",
+		c.NotEqual(
+			"Attributes", "%s",
 			a.Attributes.Encoded(attribute.DefaultEncoder()),
 			b.Attributes.Encoded(attribute.DefaultEncoder()),
-		))
+		)
 	}
 	if !a.StartTime.Equal(b.StartTime) {
-		reasons = append(reasons, notEqualStr("StartTime", a.StartTime.UnixNano(), b.StartTime.UnixNano()))
+		c.NotEqualV("StartTime", a.StartTime.UnixNano(), b.StartTime.UnixNano())
 	}
 	if !a.Time.Equal(b.Time) {
-		reasons = append(reasons, notEqualStr("Time", a.Time.UnixNano(), b.Time.UnixNano()))
+		c.NotEqualV("Time", a.Time.UnixNano(), b.Time.UnixNano())
 	}
 
-	r := equalValues(a.Value, b.Value)
-	if len(r) > 0 {
-		reasons = append(reasons, "DataPoint Value not equal:")
-		reasons = append(reasons, r...)
-	}
-	return reasons
+	c.AddComparison(equalValues(a.Value, b.Value))
+	return c
 }
 
 // equalHistogramDataPoints returns reasons HistogramDataPoints are not equal.
 // If they are equal, the returned reasons will be empty.
-func equalHistogramDataPoints(a, b metricdata.HistogramDataPoint) (reasons []string) {
+func equalHistogramDataPoints(a, b metricdata.HistogramDataPoint) comparison {
+	c := newComparison("HistogramDataPoint")
 	if !a.Attributes.Equals(&b.Attributes) {
-		reasons = append(reasons, notEqualStr(
-			"Attributes",
+		c.NotEqual(
+			"Attributes", "%s",
 			a.Attributes.Encoded(attribute.DefaultEncoder()),
 			b.Attributes.Encoded(attribute.DefaultEncoder()),
-		))
+		)
 	}
 	if !a.StartTime.Equal(b.StartTime) {
-		reasons = append(reasons, notEqualStr("StartTime", a.StartTime.UnixNano(), b.StartTime.UnixNano()))
+		c.NotEqualV("StartTime", a.StartTime.UnixNano(), b.StartTime.UnixNano())
 	}
 	if !a.Time.Equal(b.Time) {
-		reasons = append(reasons, notEqualStr("Time", a.Time.UnixNano(), b.Time.UnixNano()))
+		c.NotEqualV("Time", a.Time.UnixNano(), b.Time.UnixNano())
 	}
 	if a.Count != b.Count {
-		reasons = append(reasons, notEqualStr("Count", a.Count, b.Count))
+		c.NotEqualV("Count", a.Count, b.Count)
 	}
 	if !equalSlices(a.Bounds, b.Bounds) {
-		reasons = append(reasons, notEqualStr("Bounds", a.Bounds, b.Bounds))
+		c.NotEqualV("Bounds", a.Bounds, b.Bounds)
 	}
 	if !equalSlices(a.BucketCounts, b.BucketCounts) {
-		reasons = append(reasons, notEqualStr("BucketCounts", a.BucketCounts, b.BucketCounts))
+		c.NotEqualV("BucketCounts", a.BucketCounts, b.BucketCounts)
 	}
 	if !equalPtrValues(a.Min, b.Min) {
-		reasons = append(reasons, notEqualStr("Min", a.Min, b.Min))
+		c.NotEqualV("Min", a.Min, b.Min)
 	}
 	if !equalPtrValues(a.Max, b.Max) {
-		reasons = append(reasons, notEqualStr("Max", a.Max, b.Max))
+		c.NotEqualV("Max", a.Max, b.Max)
 	}
 	if a.Sum != b.Sum {
-		reasons = append(reasons, notEqualStr("Sum", a.Sum, b.Sum))
+		c.NotEqualV("Sum", a.Sum, b.Sum)
 	}
-	return reasons
+	return c
 }
 
 // equalValues returns reasons Values are not equal. If they are equal, the
 // returned reasons will be empty.
-func equalValues(a, b metricdata.Value) (reasons []string) {
+func equalValues(a, b metricdata.Value) comparison {
+	c := newComparison("Value")
 	if a == nil || b == nil {
 		if a != b {
-			return []string{notEqualStr("Values", a, b)}
+			c.NotEqualV("values", a, b)
 		}
-		return reasons
+		return c
 	}
 
 	if reflect.TypeOf(a) != reflect.TypeOf(b) {
-		return []string{fmt.Sprintf("Value types not equal:\nexpected: %T\nactual: %T", a, b)}
+		c.NotEqual("types", "%T", a, b)
+		return c
 	}
 
 	switch v := a.(type) {
 	case metricdata.Int64:
-		r := equalInt64(v, b.(metricdata.Int64))
-		if len(r) > 0 {
-			reasons = append(reasons, "Int64 not equal:")
-			reasons = append(reasons, r...)
-		}
+		c.AddComparison(equalInt64(v, b.(metricdata.Int64)))
 	case metricdata.Float64:
-		r := equalFloat64(v, b.(metricdata.Float64))
-		if len(r) > 0 {
-			reasons = append(reasons, "Float64 not equal:")
-			reasons = append(reasons, r...)
-		}
+		c.AddComparison(equalFloat64(v, b.(metricdata.Float64)))
 	default:
-		reasons = append(reasons, fmt.Sprintf("Value of unknown types %T", a))
+		c.AddFailure(&strFailure{
+			name: "type",
+			str:  fmt.Sprintf("unknown type: %T", a),
+		})
 	}
 
-	return reasons
+	return c
 }
 
 // equalFloat64 returns reasons Float64s are not equal. If they are equal, the
 // returned reasons will be empty.
-func equalFloat64(a, b metricdata.Float64) (reasons []string) {
+func equalFloat64(a, b metricdata.Float64) comparison {
+	c := newComparison("Float64")
 	if a != b {
-		reasons = append(reasons, notEqualStr("Float64 value", a, b))
+		c.NotEqualV("value", a, b)
 	}
-	return reasons
+	return c
 }
 
 // equalInt64 returns reasons Int64s are not equal. If they are equal, the
 // returned reasons will be empty.
-func equalInt64(a, b metricdata.Int64) (reasons []string) {
+func equalInt64(a, b metricdata.Int64) comparison {
+	c := newComparison("Int64")
 	if a != b {
-		reasons = append(reasons, notEqualStr("Int64 value", a, b))
+		c.NotEqualV("value", a, b)
 	}
-	return reasons
-}
-
-func notEqualStr(prefix string, expected, actual interface{}) string {
-	return fmt.Sprintf("%s not equal:\nexpected: %v\nactual: %v", prefix, expected, actual)
+	return c
 }
 
 func equalSlices[T comparable](a, b []T) bool {
@@ -343,15 +482,15 @@ func equalPtrValues[T comparable](a, b *T) bool {
 	return *a == *b
 }
 
-func diffSlices[T any](a, b []T, equal func(T, T) bool) (extraA, extraB []T) {
-	visited := make([]bool, len(b))
+func diffSlices[T any](a, fmtDiff []T, equal func(T, T) bool) (extraA, extraB []T) {
+	visited := make([]bool, len(fmtDiff))
 	for i := 0; i < len(a); i++ {
 		found := false
-		for j := 0; j < len(b); j++ {
+		for j := 0; j < len(fmtDiff); j++ {
 			if visited[j] {
 				continue
 			}
-			if equal(a[i], b[j]) {
+			if equal(a[i], fmtDiff[j]) {
 				visited[j] = true
 				found = true
 				break
@@ -362,39 +501,33 @@ func diffSlices[T any](a, b []T, equal func(T, T) bool) (extraA, extraB []T) {
 		}
 	}
 
-	for j := 0; j < len(b); j++ {
+	for j := 0; j < len(fmtDiff); j++ {
 		if visited[j] {
 			continue
 		}
-		extraB = append(extraB, b[j])
+		extraB = append(extraB, fmtDiff[j])
 	}
 
 	return extraA, extraB
 }
 
-func compareDiff[T any](extraExpected, extraActual []T) string {
-	if len(extraExpected) == 0 && len(extraActual) == 0 {
-		return ""
-	}
+func fmtDiff[T any](extraExpected, extraActual []T) func(string) failure {
+	return func(name string) failure {
+		var missing, extra string
+		if len(extraExpected) > 0 {
+			missing = spewConfig.Sdump(extraExpected)
+		}
+		if len(extraActual) > 0 {
+			extra = spewConfig.Sdump(extraActual)
+		}
 
-	formater := func(v T) string {
-		return fmt.Sprintf("%#v", v)
-	}
-
-	var msg bytes.Buffer
-	if len(extraExpected) > 0 {
-		_, _ = msg.WriteString("missing expected values:\n")
-		for _, v := range extraExpected {
-			_, _ = msg.WriteString(formater(v) + "\n")
+		if missing == "" && extra == "" {
+			return nil
+		}
+		return &diffFailure{
+			name:    name,
+			missing: missing,
+			extra:   extra,
 		}
 	}
-
-	if len(extraActual) > 0 {
-		_, _ = msg.WriteString("unexpected additional values:\n")
-		for _, v := range extraActual {
-			_, _ = msg.WriteString(formater(v) + "\n")
-		}
-	}
-
-	return msg.String()
 }
