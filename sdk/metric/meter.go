@@ -92,13 +92,13 @@ var _ metric.Meter = (*meter)(nil)
 
 // AsyncInt64 returns the asynchronous integer instrument provider.
 func (m *meter) AsyncInt64() asyncint64.InstrumentProvider {
-	c := newInstrumentCache[int64](&m.cache)
+	c := newResolverCache[int64](&m.cache)
 	return asyncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
 }
 
 // AsyncFloat64 returns the asynchronous floating-point instrument provider.
 func (m *meter) AsyncFloat64() asyncfloat64.InstrumentProvider {
-	c := newInstrumentCache[float64](&m.cache)
+	c := newResolverCache[float64](&m.cache)
 	return asyncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
 }
 
@@ -111,12 +111,12 @@ func (m *meter) RegisterCallback(insts []instrument.Asynchronous, f func(context
 
 // SyncInt64 returns the synchronous integer instrument provider.
 func (m *meter) SyncInt64() syncint64.InstrumentProvider {
-	c := newInstrumentCache[int64](&m.cache)
+	c := newResolverCache[int64](&m.cache)
 	return syncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
 }
 
 // SyncFloat64 returns the synchronous floating-point instrument provider.
 func (m *meter) SyncFloat64() syncfloat64.InstrumentProvider {
-	c := newInstrumentCache[float64](&m.cache)
+	c := newResolverCache[float64](&m.cache)
 	return syncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
 }

@@ -347,11 +347,11 @@ func (p pipelines) registerCallback(fn func(context.Context)) {
 // measurements with while updating all pipelines that need to pull from those
 // aggregations.
 type resolver[N int64 | float64] struct {
-	cache     instrumentCache[N]
+	cache     resolverCache[N]
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, c instrumentCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](p pipelines, c resolverCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
 		in[i] = newInserter[N](p[i])
@@ -388,15 +388,15 @@ type resolvedAggregators[N int64 | float64] struct {
 	err         error
 }
 
-type instrumentCache[N int64 | float64] struct {
+type resolverCache[N int64 | float64] struct {
 	cache *cache[instrumentID, any]
 }
 
-func newInstrumentCache[N int64 | float64](c *cache[instrumentID, any]) instrumentCache[N] {
+func newResolverCache[N int64 | float64](c *cache[instrumentID, any]) resolverCache[N] {
 	if c == nil {
 		c = &cache[instrumentID, any]{}
 	}
-	return instrumentCache[N]{cache: c}
+	return resolverCache[N]{cache: c}
 }
 
 // Lookup returns the Aggregators and error for a cached instrumentID if they
@@ -407,7 +407,7 @@ func newInstrumentCache[N int64 | float64](c *cache[instrumentID, any]) instrume
 // is returned describing the conflict.
 //
 // Lookup is safe to call concurrently.
-func (c instrumentCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
+func (c resolverCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
 	vAny := c.cache.Lookup(key, func() any {
 		a, err := f()
 		return &resolvedAggregators[N]{

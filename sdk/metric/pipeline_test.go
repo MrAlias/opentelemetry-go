@@ -223,14 +223,14 @@ func TestInstrumentCacheNumberConflict(t *testing.T) {
 	}
 	aggs := []internal.Aggregator[int64]{internal.NewCumulativeSum[int64](true)}
 
-	instCachI := newInstrumentCache[int64](&c)
+	instCachI := newResolverCache[int64](&c)
 	gotI, err := instCachI.Lookup(key, func() ([]internal.Aggregator[int64], error) {
 		return aggs, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, aggs, gotI)
 
-	instCachF := newInstrumentCache[float64](&c)
+	instCachF := newResolverCache[float64](&c)
 	gotF, err := instCachF.Lookup(key, func() ([]internal.Aggregator[float64], error) {
 		return []internal.Aggregator[float64]{
 			internal.NewCumulativeSum[float64](true),
