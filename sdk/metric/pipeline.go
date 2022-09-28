@@ -178,6 +178,54 @@ func (p *pipeline) produce(ctx context.Context) (metricdata.ResourceMetrics, err
 	}, nil
 }
 
+type insterterCache[N int64 | float64] struct {
+	cache *cache[string, any]
+}
+
+type instrumentAggregators[N int64 | float64] struct {
+	inst        view.Instrument
+	unit        unit.Unit
+	aggregators []internal.Aggregator[N]
+	err         error
+}
+
+var errConflict = errors.New("instrument already exists")
+
+func (i instrumentAggregators[N]) conflict(inst view.Instrument, u unit.Unit) error {
+	if i.inst.Name != inst.Name ||
+		i.inst.Description != inst.Description ||
+		i.inst.Scope != inst.Scope ||
+		//i.inst.Aggregation != inst.Aggregation ||  // FIXME: make this work.
+		i.unit != u {
+		return errConflict
+	}
+	return nil
+}
+
+func (c insterterCache[N]) Lookup(inst view.Instrument, u unit.Unit, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
+	vAny := c.cache.Lookup(inst.Name, func() any {
+		a, err := f()
+		return instrumentAggregators[N]{
+			inst:        inst,
+			unit:        u,
+			aggregators: a,
+			err:         err,
+		}
+	})
+
+	switch v := vAny.(type) {
+	case instrumentAggregators[N]:
+		aggs = v.aggregators
+		err = v.conflict(inst, u)
+		if err == nil {
+			err = v.err
+		}
+	default:
+		err = errCacheNumberConflict
+	}
+	return aggs, err
+}
+
 // inserter facilitates inserting of new instruments into a pipeline.
 type inserter[N int64 | float64] struct {
 	pipeline *pipeline
