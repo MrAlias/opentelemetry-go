@@ -182,6 +182,13 @@ type insterterCache[N int64 | float64] struct {
 	cache *cache[string, any]
 }
 
+func newInserterCache[N int64 | float64](c *cache[string, any]) insterterCache[N] {
+	if c == nil {
+		c = &cache[string, any]{}
+	}
+	return insterterCache[N]{cache: c}
+}
+
 type instrumentAggregators[N int64 | float64] struct {
 	inst        view.Instrument
 	unit        unit.Unit
@@ -228,11 +235,12 @@ func (c insterterCache[N]) Lookup(inst view.Instrument, u unit.Unit, f func() ([
 
 // inserter facilitates inserting of new instruments into a pipeline.
 type inserter[N int64 | float64] struct {
+	cache    insterterCache[N]
 	pipeline *pipeline
 }
 
-func newInserter[N int64 | float64](p *pipeline) *inserter[N] {
-	return &inserter[N]{p}
+func newInserter[N int64 | float64](p *pipeline, c insterterCache[N]) *inserter[N] {
+	return &inserter[N]{cache: c, pipeline: p}
 }
 
 // Instrument inserts instrument inst with instUnit returning the Aggregators
@@ -399,12 +407,12 @@ type resolver[N int64 | float64] struct {
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, c resolverCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](p pipelines, rc resolverCache[N], ic insterterCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
-		in[i] = newInserter[N](p[i])
+		in[i] = newInserter[N](p[i], ic)
 	}
-	return &resolver[N]{cache: c, inserters: in}
+	return &resolver[N]{cache: rc, inserters: in}
 }
 
 // Aggregators returns the Aggregators instrument inst needs to update when it

@@ -83,8 +83,9 @@ func (r *meterRegistry) Get(s instrumentation.Scope) *meter {
 type meter struct {
 	instrumentation.Scope
 
-	pipes pipelines
-	cache cache[instrumentID, any]
+	pipes          pipelines
+	resolverCache  cache[instrumentID, any]
+	insterterCache cache[string, any]
 }
 
 // Compile-time check meter implements metric.Meter.
@@ -92,14 +93,16 @@ var _ metric.Meter = (*meter)(nil)
 
 // AsyncInt64 returns the asynchronous integer instrument provider.
 func (m *meter) AsyncInt64() asyncint64.InstrumentProvider {
-	c := newResolverCache[int64](&m.cache)
-	return asyncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
+	ic := newInserterCache[int64](&m.insterterCache)
+	rc := newResolverCache[int64](&m.resolverCache)
+	return asyncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, rc, ic)}
 }
 
 // AsyncFloat64 returns the asynchronous floating-point instrument provider.
 func (m *meter) AsyncFloat64() asyncfloat64.InstrumentProvider {
-	c := newResolverCache[float64](&m.cache)
-	return asyncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
+	ic := newInserterCache[float64](&m.insterterCache)
+	rc := newResolverCache[float64](&m.resolverCache)
+	return asyncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, rc, ic)}
 }
 
 // RegisterCallback registers the function f to be called when any of the
@@ -111,12 +114,14 @@ func (m *meter) RegisterCallback(insts []instrument.Asynchronous, f func(context
 
 // SyncInt64 returns the synchronous integer instrument provider.
 func (m *meter) SyncInt64() syncint64.InstrumentProvider {
-	c := newResolverCache[int64](&m.cache)
-	return syncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
+	ic := newInserterCache[int64](&m.insterterCache)
+	rn := newResolverCache[int64](&m.resolverCache)
+	return syncInt64Provider{scope: m.Scope, resolve: newResolver(m.pipes, rn, ic)}
 }
 
 // SyncFloat64 returns the synchronous floating-point instrument provider.
 func (m *meter) SyncFloat64() syncfloat64.InstrumentProvider {
-	c := newResolverCache[float64](&m.cache)
-	return syncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, c)}
+	ic := newInserterCache[float64](&m.insterterCache)
+	rn := newResolverCache[float64](&m.resolverCache)
+	return syncFloat64Provider{scope: m.Scope, resolve: newResolver(m.pipes, rn, ic)}
 }
