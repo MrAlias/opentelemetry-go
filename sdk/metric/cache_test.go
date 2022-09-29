@@ -19,6 +19,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/metric/unit"
+	"go.opentelemetry.io/otel/sdk/instrumentation"
+	"go.opentelemetry.io/otel/sdk/metric/internal"
+	"go.opentelemetry.io/otel/sdk/metric/view"
 )
 
 func TestCache(t *testing.T) {
@@ -36,4 +40,30 @@ func TestCache(t *testing.T) {
 	assert.Equal(t, v0, c.Lookup(k0, func() int { return v1 }), "existing key")
 
 	assert.Equal(t, v1, c.Lookup(k1, func() int { return v1 }), "non-existing key")
+}
+
+func TestAggCacheNumberConflict(t *testing.T) {
+	c := cache[string, any]{}
+
+	inst := view.Instrument{
+		Scope:       instrumentation.Scope{Name: "scope name"},
+		Name:        "name",
+		Description: "description",
+	}
+	u := unit.Dimensionless
+	aggs := internal.NewCumulativeSum[int64](true)
+
+	instCachI := newAggCache[int64](&c)
+	gotI, err := instCachI.Lookup(inst, u, func() (internal.Aggregator[int64], error) {
+		return aggs, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, aggs, gotI)
+
+	instCachF := newAggCache[float64](&c)
+	gotF, err := instCachF.Lookup(inst, u, func() (internal.Aggregator[float64], error) {
+		return internal.NewCumulativeSum[float64](true), nil
+	})
+	assert.ErrorIs(t, err, errInstConflictNumber)
+	assert.Nil(t, gotF, "cache conflict should not return a value")
 }

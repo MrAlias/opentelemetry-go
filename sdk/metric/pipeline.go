@@ -350,82 +350,30 @@ func (p pipelines) registerCallback(fn func(context.Context)) {
 // measurements with while updating all pipelines that need to pull from those
 // aggregations.
 type resolver[N int64 | float64] struct {
-	cache     resolverCache[N]
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, rc resolverCache[N], ic aggCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](p pipelines, c aggCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
-		in[i] = newInserter[N](p[i], ic)
+		in[i] = newInserter[N](p[i], c)
 	}
-	return &resolver[N]{cache: rc, inserters: in}
+	return &resolver[N]{inserters: in}
 }
 
 // Aggregators returns the Aggregators instrument inst needs to update when it
 // makes a measurement.
 func (r *resolver[N]) Aggregators(inst view.Instrument, instUnit unit.Unit) ([]internal.Aggregator[N], error) {
-	id := instrumentID{
-		scope:       inst.Scope,
-		name:        inst.Name,
-		description: inst.Description,
-	}
-
-	return r.cache.Lookup(id, func() ([]internal.Aggregator[N], error) {
-		var aggs []internal.Aggregator[N]
-		errs := &multierror{}
-		for _, i := range r.inserters {
-			a, err := i.Instrument(inst, instUnit)
-			if err != nil {
-				errs.append(err)
-			}
-			aggs = append(aggs, a...)
+	var aggs []internal.Aggregator[N]
+	errs := &multierror{}
+	for _, i := range r.inserters {
+		a, err := i.Instrument(inst, instUnit)
+		if err != nil {
+			errs.append(err)
 		}
-		return aggs, errs.errorOrNil()
-	})
-}
-
-// resolvedAggregators is the result of resolving aggregators for an instrument.
-type resolvedAggregators[N int64 | float64] struct {
-	aggregators []internal.Aggregator[N]
-	err         error
-}
-
-type resolverCache[N int64 | float64] struct {
-	cache *cache[instrumentID, any]
-}
-
-func newResolverCache[N int64 | float64](c *cache[instrumentID, any]) resolverCache[N] {
-	if c == nil {
-		c = &cache[instrumentID, any]{}
+		aggs = append(aggs, a...)
 	}
-	return resolverCache[N]{cache: c}
-}
-
-// Lookup returns the Aggregators and error for a cached instrumentID if they
-// exist in the cache. Otherwise, f is called and its returned values are set
-// in the cache and returned.
-//
-// If an instrumentID has been stored in the cache for a different N, an error
-// is returned describing the conflict.
-//
-// Lookup is safe to call concurrently.
-func (c resolverCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
-	vAny := c.cache.Lookup(key, func() any {
-		a, err := f()
-		return &resolvedAggregators[N]{
-			aggregators: a,
-			err:         err,
-		}
-	})
-
-	switch v := vAny.(type) {
-	case *resolvedAggregators[N]:
-		aggs, err = v.aggregators, v.err
-	default:
-		err = errInstConflictNumber
-	}
-	return aggs, err
+	return aggs, errs.errorOrNil()
 }
 
 type multierror struct {

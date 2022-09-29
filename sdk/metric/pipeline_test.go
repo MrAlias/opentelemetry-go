@@ -25,7 +25,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/unit"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
-	"go.opentelemetry.io/otel/sdk/metric/internal"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
@@ -211,31 +210,4 @@ func TestPipelineConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-}
-
-func TestInstrumentCacheNumberConflict(t *testing.T) {
-	c := cache[instrumentID, any]{}
-
-	key := instrumentID{
-		scope:       instrumentation.Scope{Name: "scope name"},
-		name:        "name",
-		description: "description",
-	}
-	aggs := []internal.Aggregator[int64]{internal.NewCumulativeSum[int64](true)}
-
-	instCachI := newResolverCache[int64](&c)
-	gotI, err := instCachI.Lookup(key, func() ([]internal.Aggregator[int64], error) {
-		return aggs, nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, aggs, gotI)
-
-	instCachF := newResolverCache[float64](&c)
-	gotF, err := instCachF.Lookup(key, func() ([]internal.Aggregator[float64], error) {
-		return []internal.Aggregator[float64]{
-			internal.NewCumulativeSum[float64](true),
-		}, nil
-	})
-	assert.ErrorIs(t, err, errInstConflictNumber)
-	assert.Nil(t, gotF, "cache conflict should not return a value")
 }
