@@ -178,28 +178,29 @@ func (p *pipeline) produce(ctx context.Context) (metricdata.ResourceMetrics, err
 
 // inserter facilitates inserting of new instruments into a pipeline.
 type inserter[N int64 | float64] struct {
+	scope    instrumentation.Scope
 	cache    aggCache[N]
 	pipeline *pipeline
 }
 
-func newInserter[N int64 | float64](p *pipeline, c aggCache[N]) *inserter[N] {
-	return &inserter[N]{cache: c, pipeline: p}
+func newInserter[N int64 | float64](s instrumentation.Scope, p *pipeline, c aggCache[N]) *inserter[N] {
+	return &inserter[N]{scope: s, cache: c, pipeline: p}
 }
 
 // Instrument inserts instrument inst with instUnit returning the Aggregators
 // that need to be updated with measurments for that instrument.
-func (i *inserter[N]) Instrument(inst view.Instrument, instUnit unit.Unit) ([]internal.Aggregator[N], error) {
+func (i *inserter[N]) Instrument(key instProviderKey) ([]internal.Aggregator[N], error) {
 	var aggs []internal.Aggregator[N]
 	errs := &multierror{wrapped: errCreatingAggregators}
 	// The cache will return the same Aggregator instance. Use this fact to
 	// compare pointer addresses to deduplicate Aggregators.
 	seen := make(map[internal.Aggregator[N]]struct{})
 	for _, v := range i.pipeline.views {
-		inst, match := v.TransformInstrument(inst)
+		inst, match := v.TransformInstrument(key.viewInstrument(i.scope))
 		if !match {
 			continue
 		}
-		agg, err := i.cachedAggregator(inst, instUnit)
+		agg, err := i.cachedAggregator(inst, key.Unit)
 		if err != nil {
 			errs.append(err)
 		}
@@ -353,21 +354,21 @@ type resolver[N int64 | float64] struct {
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, c aggCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](s instrumentation.Scope, p pipelines, c aggCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
-		in[i] = newInserter[N](p[i], c)
+		in[i] = newInserter[N](s, p[i], c)
 	}
 	return &resolver[N]{inserters: in}
 }
 
 // Aggregators returns the Aggregators instrument inst needs to update when it
 // makes a measurement.
-func (r *resolver[N]) Aggregators(inst view.Instrument, instUnit unit.Unit) ([]internal.Aggregator[N], error) {
+func (r *resolver[N]) Aggregators(key instProviderKey) ([]internal.Aggregator[N], error) {
 	var aggs []internal.Aggregator[N]
 	errs := &multierror{}
 	for _, i := range r.inserters {
-		a, err := i.Instrument(inst, instUnit)
+		a, err := i.Instrument(key)
 		if err != nil {
 			errs.append(err)
 		}
