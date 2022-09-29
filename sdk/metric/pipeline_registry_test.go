@@ -412,7 +412,7 @@ func TestPipelineRegistryCreateAggregatorsDuplicateErrors(t *testing.T) {
 
 	// The Rename view should error, because it creates a foo instrument.
 	intAggs, err = ri.Aggregators(barInst, unit.Dimensionless)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, intAggs, 2)
 
 	// Creating a float foo instrument should error because there is an int foo instrument.
