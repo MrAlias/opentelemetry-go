@@ -211,7 +211,7 @@ func testCreateAggregators[N int64 | float64](t *testing.T) {
 	}
 	for _, tt := range testcases {
 		t.Run(tt.name, func(t *testing.T) {
-			i := newInserter[N](newPipeline(nil, tt.reader, tt.views))
+			i := newInserter[N](newPipeline(nil, tt.reader, tt.views), newInserterCache[N](nil))
 			got, err := i.Instrument(tt.inst, unit.Dimensionless)
 			assert.ErrorIs(t, err, tt.wantErr)
 			require.Len(t, got, tt.wantLen)
@@ -223,7 +223,7 @@ func testCreateAggregators[N int64 | float64](t *testing.T) {
 }
 
 func testInvalidInstrumentShouldPanic[N int64 | float64]() {
-	i := newInserter[N](newPipeline(nil, NewManualReader(), []view.View{{}}))
+	i := newInserter[N](newPipeline(nil, NewManualReader(), []view.View{{}}), newInserterCache[N](nil))
 	inst := view.Instrument{
 		Name: "foo",
 		Kind: view.InstrumentKind(255),
@@ -334,7 +334,7 @@ func TestPipelineRegistryCreateAggregators(t *testing.T) {
 func testPipelineRegistryResolveIntAggregators(t *testing.T, p pipelines, wantCount int) {
 	inst := view.Instrument{Name: "foo", Kind: view.SyncCounter}
 
-	r := newResolver(p, newInstrumentCache[int64](nil))
+	r := newResolver(p, newResolverCache[int64](nil), newInserterCache[int64](nil))
 	aggs, err := r.Aggregators(inst, unit.Dimensionless)
 	assert.NoError(t, err)
 
@@ -344,7 +344,7 @@ func testPipelineRegistryResolveIntAggregators(t *testing.T, p pipelines, wantCo
 func testPipelineRegistryResolveFloatAggregators(t *testing.T, p pipelines, wantCount int) {
 	inst := view.Instrument{Name: "foo", Kind: view.SyncCounter}
 
-	r := newResolver(p, newInstrumentCache[float64](nil))
+	r := newResolver(p, newResolverCache[float64](nil), newInserterCache[float64](nil))
 	aggs, err := r.Aggregators(inst, unit.Dimensionless)
 	assert.NoError(t, err)
 
@@ -375,14 +375,14 @@ func TestPipelineRegistryCreateAggregatorsIncompatibleInstrument(t *testing.T) {
 	p := newPipelines(resource.Empty(), views)
 	inst := view.Instrument{Name: "foo", Kind: view.AsyncGauge}
 
-	ri := newResolver(p, newInstrumentCache[int64](nil))
+	ri := newResolver(p, newResolverCache[int64](nil), newInserterCache[int64](nil))
 	intAggs, err := ri.Aggregators(inst, unit.Dimensionless)
 	assert.Error(t, err)
 	assert.Len(t, intAggs, 0)
 
 	p = newPipelines(resource.Empty(), views)
 
-	rf := newResolver(p, newInstrumentCache[float64](nil))
+	rf := newResolver(p, newResolverCache[float64](nil), newInserterCache[float64](nil))
 	floatAggs, err := rf.Aggregators(inst, unit.Dimensionless)
 	assert.Error(t, err)
 	assert.Len(t, floatAggs, 0)
@@ -405,18 +405,18 @@ func TestPipelineRegistryCreateAggregatorsDuplicateErrors(t *testing.T) {
 
 	p := newPipelines(resource.Empty(), views)
 
-	ri := newResolver(p, newInstrumentCache[int64](nil))
+	ri := newResolver(p, newResolverCache[int64](nil), newInserterCache[int64](nil))
 	intAggs, err := ri.Aggregators(fooInst, unit.Dimensionless)
 	assert.NoError(t, err)
 	assert.Len(t, intAggs, 1)
 
 	// The Rename view should error, because it creates a foo instrument.
 	intAggs, err = ri.Aggregators(barInst, unit.Dimensionless)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Len(t, intAggs, 2)
 
 	// Creating a float foo instrument should error because there is an int foo instrument.
-	rf := newResolver(p, newInstrumentCache[float64](nil))
+	rf := newResolver(p, newResolverCache[float64](nil), newInserterCache[float64](nil))
 	floatAggs, err := rf.Aggregators(fooInst, unit.Dimensionless)
 	assert.Error(t, err)
 	assert.Len(t, floatAggs, 1)

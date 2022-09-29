@@ -178,71 +178,131 @@ func (p *pipeline) produce(ctx context.Context) (metricdata.ResourceMetrics, err
 	}, nil
 }
 
+type insterterCache[N int64 | float64] struct {
+	cache *cache[string, any]
+}
+
+func newInserterCache[N int64 | float64](c *cache[string, any]) insterterCache[N] {
+	if c == nil {
+		c = &cache[string, any]{}
+	}
+	return insterterCache[N]{cache: c}
+}
+
+type instrumentAggregator[N int64 | float64] struct {
+	inst       view.Instrument
+	unit       unit.Unit
+	aggregator internal.Aggregator[N]
+	err        error
+}
+
+var errConflict = errors.New("instrument already exists")
+
+func (i instrumentAggregator[N]) conflict(inst view.Instrument, u unit.Unit) error {
+	if i.inst.Name != inst.Name ||
+		i.inst.Description != inst.Description ||
+		i.inst.Scope != inst.Scope ||
+		//i.inst.Aggregation != inst.Aggregation ||  // FIXME: make this work.
+		i.unit != u {
+		return errConflict
+	}
+	return nil
+}
+
+func (c insterterCache[N]) Lookup(inst view.Instrument, u unit.Unit, f func() (internal.Aggregator[N], error)) (aggs internal.Aggregator[N], err error) {
+	vAny := c.cache.Lookup(inst.Name, func() any {
+		a, err := f()
+		return instrumentAggregator[N]{
+			inst:       inst,
+			unit:       u,
+			aggregator: a,
+			err:        err,
+		}
+	})
+
+	switch v := vAny.(type) {
+	case instrumentAggregator[N]:
+		aggs = v.aggregator
+		err = v.conflict(inst, u)
+		if err == nil {
+			err = v.err
+		}
+	default:
+		err = errCacheNumberConflict
+	}
+	return aggs, err
+}
+
 // inserter facilitates inserting of new instruments into a pipeline.
 type inserter[N int64 | float64] struct {
+	cache    insterterCache[N]
 	pipeline *pipeline
 }
 
-func newInserter[N int64 | float64](p *pipeline) *inserter[N] {
-	return &inserter[N]{p}
+func newInserter[N int64 | float64](p *pipeline, c insterterCache[N]) *inserter[N] {
+	return &inserter[N]{cache: c, pipeline: p}
 }
 
 // Instrument inserts instrument inst with instUnit returning the Aggregators
 // that need to be updated with measurments for that instrument.
 func (i *inserter[N]) Instrument(inst view.Instrument, instUnit unit.Unit) ([]internal.Aggregator[N], error) {
-	seen := map[instrumentID]struct{}{}
 	var aggs []internal.Aggregator[N]
 	errs := &multierror{wrapped: errCreatingAggregators}
+	// The cache will return the same Aggregator instance. Use this fact to
+	// compare pointer addresses to deduplicate Aggregators.
+	seen := make(map[internal.Aggregator[N]]struct{})
 	for _, v := range i.pipeline.views {
 		inst, match := v.TransformInstrument(inst)
-
-		id := instrumentID{
-			scope:       inst.Scope,
-			name:        inst.Name,
-			description: inst.Description,
-		}
-
-		if _, ok := seen[id]; ok || !match {
+		if !match {
 			continue
 		}
-
-		if inst.Aggregation == nil {
-			inst.Aggregation = i.pipeline.reader.aggregation(inst.Kind)
-		} else if _, ok := inst.Aggregation.(aggregation.Default); ok {
-			inst.Aggregation = i.pipeline.reader.aggregation(inst.Kind)
-		}
-
-		if err := isAggregatorCompatible(inst.Kind, inst.Aggregation); err != nil {
-			err = fmt.Errorf("creating aggregator with instrumentKind: %d, aggregation %v: %w", inst.Kind, inst.Aggregation, err)
-			errs.append(err)
-			continue
-		}
-
-		agg, err := i.aggregator(inst)
+		agg, err := i.cachedAggregator(inst, instUnit)
 		if err != nil {
 			errs.append(err)
-			continue
 		}
 		if agg == nil { // Drop aggregator.
 			continue
 		}
-		// TODO (#3011): If filtering is done at the instrument level add here.
-		// This is where the aggregator and the view are both in scope.
-		aggs = append(aggs, agg)
-		seen[id] = struct{}{}
-		err = i.pipeline.addAggregator(inst.Scope, inst.Name, inst.Description, instUnit, agg)
-		if err != nil {
-			errs.append(err)
+		if _, ok := seen[agg]; ok {
+			// This aggregator has aleady been added.
+			continue
 		}
+		seen[agg] = struct{}{}
+		aggs = append(aggs, agg)
 	}
 	// TODO(#3224): handle when no views match. Default should be reader
 	// aggregation returned.
 	return aggs, errs.errorOrNil()
 }
 
+func (i *inserter[N]) cachedAggregator(inst view.Instrument, u unit.Unit) (internal.Aggregator[N], error) {
+	return i.cache.Lookup(inst, u, func() (internal.Aggregator[N], error) {
+		agg, err := i.aggregator(inst)
+		if err != nil {
+			return nil, err
+		}
+		if agg == nil { // Drop aggregator.
+			return nil, nil
+		}
+		err = i.pipeline.addAggregator(inst.Scope, inst.Name, inst.Description, u, agg)
+		return agg, err
+	})
+}
+
 // aggregator returns the Aggregator for an instrument configuration. If the
 // instrument defines an unknown aggregation, an error is returned.
 func (i *inserter[N]) aggregator(inst view.Instrument) (internal.Aggregator[N], error) {
+	if inst.Aggregation == nil {
+		inst.Aggregation = i.pipeline.reader.aggregation(inst.Kind)
+	} else if _, ok := inst.Aggregation.(aggregation.Default); ok {
+		inst.Aggregation = i.pipeline.reader.aggregation(inst.Kind)
+	}
+
+	if err := isAggregatorCompatible(inst.Kind, inst.Aggregation); err != nil {
+		err = fmt.Errorf("creating aggregator with instrumentKind: %d, aggregation %v: %w", inst.Kind, inst.Aggregation, err)
+		return nil, err
+	}
+
 	// TODO (#3011): If filtering is done by the Aggregator it should be passed
 	// here.
 	var (
@@ -347,16 +407,16 @@ func (p pipelines) registerCallback(fn func(context.Context)) {
 // measurements with while updating all pipelines that need to pull from those
 // aggregations.
 type resolver[N int64 | float64] struct {
-	cache     instrumentCache[N]
+	cache     resolverCache[N]
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, c instrumentCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](p pipelines, rc resolverCache[N], ic insterterCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
-		in[i] = newInserter[N](p[i])
+		in[i] = newInserter[N](p[i], ic)
 	}
-	return &resolver[N]{cache: c, inserters: in}
+	return &resolver[N]{cache: rc, inserters: in}
 }
 
 // Aggregators returns the Aggregators instrument inst needs to update when it
@@ -388,15 +448,15 @@ type resolvedAggregators[N int64 | float64] struct {
 	err         error
 }
 
-type instrumentCache[N int64 | float64] struct {
+type resolverCache[N int64 | float64] struct {
 	cache *cache[instrumentID, any]
 }
 
-func newInstrumentCache[N int64 | float64](c *cache[instrumentID, any]) instrumentCache[N] {
+func newResolverCache[N int64 | float64](c *cache[instrumentID, any]) resolverCache[N] {
 	if c == nil {
 		c = &cache[instrumentID, any]{}
 	}
-	return instrumentCache[N]{cache: c}
+	return resolverCache[N]{cache: c}
 }
 
 // Lookup returns the Aggregators and error for a cached instrumentID if they
@@ -407,7 +467,7 @@ func newInstrumentCache[N int64 | float64](c *cache[instrumentID, any]) instrume
 // is returned describing the conflict.
 //
 // Lookup is safe to call concurrently.
-func (c instrumentCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
+func (c resolverCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregator[N], error)) (aggs []internal.Aggregator[N], err error) {
 	vAny := c.cache.Lookup(key, func() any {
 		a, err := f()
 		return &resolvedAggregators[N]{
