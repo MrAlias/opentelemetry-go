@@ -236,6 +236,6 @@ func TestInstrumentCacheNumberConflict(t *testing.T) {
 			internal.NewCumulativeSum[float64](true),
 		}, nil
 	})
-	assert.ErrorIs(t, err, errCacheNumberConflict)
+	assert.ErrorIs(t, err, errInstConflictNumber)
 	assert.Nil(t, gotF, "cache conflict should not return a value")
 }

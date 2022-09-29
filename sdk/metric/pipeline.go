@@ -34,8 +34,6 @@ var (
 	errCreatingAggregators     = errors.New("could not create all aggregators")
 	errIncompatibleAggregation = errors.New("incompatible aggregation")
 	errUnknownAggregation      = errors.New("unrecognized aggregation")
-
-	errCacheNumberConflict = errors.New("instrument already exists: conflicting number type")
 )
 
 type aggregator interface {
@@ -178,68 +176,13 @@ func (p *pipeline) produce(ctx context.Context) (metricdata.ResourceMetrics, err
 	}, nil
 }
 
-type insterterCache[N int64 | float64] struct {
-	cache *cache[string, any]
-}
-
-func newInserterCache[N int64 | float64](c *cache[string, any]) insterterCache[N] {
-	if c == nil {
-		c = &cache[string, any]{}
-	}
-	return insterterCache[N]{cache: c}
-}
-
-type instrumentAggregator[N int64 | float64] struct {
-	inst       view.Instrument
-	unit       unit.Unit
-	aggregator internal.Aggregator[N]
-	err        error
-}
-
-var errConflict = errors.New("instrument already exists")
-
-func (i instrumentAggregator[N]) conflict(inst view.Instrument, u unit.Unit) error {
-	if i.inst.Name != inst.Name ||
-		i.inst.Description != inst.Description ||
-		i.inst.Scope != inst.Scope ||
-		//i.inst.Aggregation != inst.Aggregation ||  // FIXME: make this work.
-		i.unit != u {
-		return errConflict
-	}
-	return nil
-}
-
-func (c insterterCache[N]) Lookup(inst view.Instrument, u unit.Unit, f func() (internal.Aggregator[N], error)) (aggs internal.Aggregator[N], err error) {
-	vAny := c.cache.Lookup(inst.Name, func() any {
-		a, err := f()
-		return instrumentAggregator[N]{
-			inst:       inst,
-			unit:       u,
-			aggregator: a,
-			err:        err,
-		}
-	})
-
-	switch v := vAny.(type) {
-	case instrumentAggregator[N]:
-		aggs = v.aggregator
-		err = v.conflict(inst, u)
-		if err == nil {
-			err = v.err
-		}
-	default:
-		err = errCacheNumberConflict
-	}
-	return aggs, err
-}
-
 // inserter facilitates inserting of new instruments into a pipeline.
 type inserter[N int64 | float64] struct {
-	cache    insterterCache[N]
+	cache    aggCache[N]
 	pipeline *pipeline
 }
 
-func newInserter[N int64 | float64](p *pipeline, c insterterCache[N]) *inserter[N] {
+func newInserter[N int64 | float64](p *pipeline, c aggCache[N]) *inserter[N] {
 	return &inserter[N]{cache: c, pipeline: p}
 }
 
@@ -411,7 +354,7 @@ type resolver[N int64 | float64] struct {
 	inserters []*inserter[N]
 }
 
-func newResolver[N int64 | float64](p pipelines, rc resolverCache[N], ic insterterCache[N]) *resolver[N] {
+func newResolver[N int64 | float64](p pipelines, rc resolverCache[N], ic aggCache[N]) *resolver[N] {
 	in := make([]*inserter[N], len(p))
 	for i := range in {
 		in[i] = newInserter[N](p[i], ic)
@@ -480,7 +423,7 @@ func (c resolverCache[N]) Lookup(key instrumentID, f func() ([]internal.Aggregat
 	case *resolvedAggregators[N]:
 		aggs, err = v.aggregators, v.err
 	default:
-		err = errCacheNumberConflict
+		err = errInstConflictNumber
 	}
 	return aggs, err
 }
