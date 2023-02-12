@@ -17,8 +17,12 @@ package attribute // import "go.opentelemetry.io/otel/attribute"
 // Iterator allows iterating over the set of attributes in order, sorted by
 // key.
 type Iterator struct {
-	storage *Set
+	storage *storage
 	idx     int
+}
+
+func newIterator(s *storage) Iterator {
+	return Iterator{storage: s, idx: -1}
 }
 
 // MergeIterator supports iterating over two sets of attributes while
@@ -54,7 +58,7 @@ func (i *Iterator) Label() KeyValue {
 // Attribute returns the current KeyValue of the Iterator. It must be called
 // only after Next returns true.
 func (i *Iterator) Attribute() KeyValue {
-	kv, _ := i.storage.Get(i.idx)
+	kv, _ := i.storage.getAt(i.idx)
 	return kv
 }
 
@@ -74,7 +78,7 @@ func (i *Iterator) IndexedAttribute() (int, KeyValue) {
 
 // Len returns a number of attributes in the iterated set.
 func (i *Iterator) Len() int {
-	return i.storage.Len()
+	return i.storage.len()
 }
 
 // ToSlice is a convenience function that creates a slice of attributes from
