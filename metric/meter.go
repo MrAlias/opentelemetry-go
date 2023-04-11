@@ -17,7 +17,6 @@ package metric // import "go.opentelemetry.io/otel/metric"
 import (
 	"context"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/embedded"
 	"go.opentelemetry.io/otel/metric/instrument"
 )
@@ -142,9 +141,9 @@ type Observer interface {
 	embedded.Observer
 
 	// ObserveFloat64 records the float64 value with attributes for obsrv.
-	ObserveFloat64(obsrv instrument.ObservableT[float64], value float64, attributes ...attribute.KeyValue)
+	ObserveFloat64(obsrv instrument.ObservableT[float64], value float64, opts ...instrument.ObserveOption[float64])
 	// ObserveInt64 records the int64 value with attributes for obsrv.
-	ObserveInt64(obsrv instrument.ObservableT[int64], value int64, attributes ...attribute.KeyValue)
+	ObserveInt64(obsrv instrument.ObservableT[int64], value int64, opts ...instrument.ObserveOption[int64])
 }
 
 // Registration is an token representing the unique registration of a callback

@@ -20,7 +20,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/embedded"
 	"go.opentelemetry.io/otel/metric/instrument"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -153,9 +152,9 @@ type testCountingInstrument[N int64 | float64] struct {
 func (i *testCountingInstrument[N]) observe() {
 	i.count++
 }
-func (i *testCountingInstrument[N]) Add(context.Context, N, ...attribute.KeyValue) {
+func (i *testCountingInstrument[N]) Add(context.Context, N, ...instrument.AddOption[N]) {
 	i.count++
 }
-func (i *testCountingInstrument[N]) Record(context.Context, N, ...attribute.KeyValue) {
+func (i *testCountingInstrument[N]) Record(context.Context, N, ...instrument.RecordOption[N]) {
 	i.count++
 }

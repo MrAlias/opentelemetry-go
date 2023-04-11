@@ -18,7 +18,6 @@ import (
 	"context"
 	"sync/atomic"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/embedded"
 	"go.opentelemetry.io/otel/metric/instrument"
 )
@@ -106,9 +105,9 @@ type counter[N int64 | float64] struct {
 	opts []instrument.CounterOption[N]
 }
 
-func (i *counter[N]) Add(ctx context.Context, incr N, attrs ...attribute.KeyValue) {
+func (i *counter[N]) Add(ctx context.Context, incr N, opts ...instrument.AddOption[N]) {
 	if ctr := i.Load(); ctr != nil {
-		ctr.(instrument.Counter[N]).Add(ctx, incr, attrs...)
+		ctr.(instrument.Counter[N]).Add(ctx, incr, opts...)
 	}
 }
 
@@ -120,9 +119,9 @@ type upDownCounter[N int64 | float64] struct {
 	opts []instrument.UpDownCounterOption[N]
 }
 
-func (i *upDownCounter[N]) Add(ctx context.Context, incr N, attrs ...attribute.KeyValue) {
+func (i *upDownCounter[N]) Add(ctx context.Context, incr N, opts ...instrument.AddOption[N]) {
 	if ctr := i.Load(); ctr != nil {
-		ctr.(instrument.UpDownCounter[N]).Add(ctx, incr, attrs...)
+		ctr.(instrument.UpDownCounter[N]).Add(ctx, incr, opts...)
 	}
 }
 
@@ -134,8 +133,8 @@ type histogram[N int64 | float64] struct {
 	opts []instrument.HistogramOption[N]
 }
 
-func (i *histogram[N]) Record(ctx context.Context, x N, attrs ...attribute.KeyValue) {
+func (i *histogram[N]) Record(ctx context.Context, x N, opts ...instrument.RecordOption[N]) {
 	if ctr := i.Load(); ctr != nil {
-		ctr.(instrument.Histogram[N]).Record(ctx, x, attrs...)
+		ctr.(instrument.Histogram[N]).Record(ctx, x, opts...)
 	}
 }

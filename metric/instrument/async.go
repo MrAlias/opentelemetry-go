@@ -17,7 +17,6 @@ package instrument // import "go.opentelemetry.io/otel/metric/instrument"
 import (
 	"context"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/embedded"
 )
 
@@ -210,7 +209,7 @@ type ObserverT[N int64 | float64] interface {
 	embedded.ObserverT[N]
 
 	// Observe records the value with attributes.
-	Observe(value N, attributes ...attribute.KeyValue)
+	Observe(value N, opts ...ObserveOption[N])
 }
 
 // Callback is a function registered with a Meter that makes observations

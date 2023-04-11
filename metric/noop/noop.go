@@ -26,7 +26,6 @@ package noop // import "go.opentelemetry.io/otel/metric/noop"
 import (
 	"context"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/embedded"
 	"go.opentelemetry.io/otel/metric/instrument"
@@ -153,11 +152,11 @@ func (Meter) RegisterCallback(metric.Callback, ...instrument.Observable) (metric
 type Observer struct{ embedded.Observer }
 
 // ObserveFloat64 performs no operation.
-func (Observer) ObserveFloat64(instrument.ObservableT[float64], float64, ...attribute.KeyValue) {
+func (Observer) ObserveFloat64(instrument.ObservableT[float64], float64, ...instrument.ObserveOption[float64]) {
 }
 
 // ObserveInt64 performs no operation.
-func (Observer) ObserveInt64(instrument.ObservableT[int64], int64, ...attribute.KeyValue) {
+func (Observer) ObserveInt64(instrument.ObservableT[int64], int64, ...instrument.ObserveOption[int64]) {
 }
 
 // Registration is the registration of a Callback with a No-Op Meter.
@@ -173,21 +172,21 @@ func (Registration) Unregister() error { return nil }
 type Counter[N int64 | float64] struct{ embedded.Counter[N] }
 
 // Add performs no operation.
-func (Counter[N]) Add(context.Context, N, ...attribute.KeyValue) {}
+func (Counter[N]) Add(context.Context, N, ...instrument.AddOption[N]) {}
 
 // UpDownCounter is an OpenTelemetry UpDownCounter used to record measurements.
 // It produces no telemetry.
 type UpDownCounter[N int64 | float64] struct{ embedded.UpDownCounter[N] }
 
 // Add performs no operation.
-func (UpDownCounter[N]) Add(context.Context, N, ...attribute.KeyValue) {}
+func (UpDownCounter[N]) Add(context.Context, N, ...instrument.AddOption[N]) {}
 
 // Histogram is an OpenTelemetry Histogram used to record measurements. It
 // produces no telemetry.
 type Histogram[N int64 | float64] struct{ embedded.Histogram[N] }
 
 // Record performs no operation.
-func (Histogram[N]) Record(context.Context, N, ...attribute.KeyValue) {}
+func (Histogram[N]) Record(context.Context, N, ...instrument.RecordOption[N]) {}
 
 // ObservableCounter is an OpenTelemetry ObservableCounter used to record
 // measurements. It produces no telemetry.
@@ -214,4 +213,4 @@ type ObservableUpDownCounter[N int64 | float64] struct {
 type ObserverT[N int64 | float64] struct{ embedded.ObserverT[N] }
 
 // Observe performs no operation.
-func (ObserverT[N]) Observe(N, ...attribute.KeyValue) {}
+func (ObserverT[N]) Observe(N, ...instrument.ObserveOption[N]) {}

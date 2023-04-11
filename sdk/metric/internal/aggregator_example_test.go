@@ -38,7 +38,7 @@ func (p *meter) Int64Counter(string, ...instrument.CounterOption[int64]) (instru
 	// here these are determined to be a cumulative sum.
 
 	aggregator := NewCumulativeSum[int64](true)
-	count := inst{aggregateFunc: aggregator.Aggregate}
+	count := inst[int64]{aggregateFunc: aggregator.Aggregate}
 
 	p.aggregations = append(p.aggregations, aggregator.Aggregation())
 
@@ -55,7 +55,7 @@ func (p *meter) Int64UpDownCounter(string, ...instrument.UpDownCounterOption[int
 	// aggregation (the temporality does not affect the produced aggregations).
 
 	aggregator := NewLastValue[int64]()
-	upDownCount := inst{aggregateFunc: aggregator.Aggregate}
+	upDownCount := inst[int64]{aggregateFunc: aggregator.Aggregate}
 
 	p.aggregations = append(p.aggregations, aggregator.Aggregation())
 
@@ -75,7 +75,7 @@ func (p *meter) Int64Histogram(string, ...instrument.HistogramOption[int64]) (in
 		Boundaries: []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 1000},
 		NoMinMax:   false,
 	})
-	hist := inst{aggregateFunc: aggregator.Aggregate}
+	hist := inst[int64]{aggregateFunc: aggregator.Aggregate}
 
 	p.aggregations = append(p.aggregations, aggregator.Aggregation())
 
@@ -86,7 +86,7 @@ func (p *meter) Int64Histogram(string, ...instrument.HistogramOption[int64]) (in
 
 // inst is a generalized int64 synchronous counter, up-down counter, and
 // histogram used for demonstration purposes only.
-type inst struct {
+type inst[N int64 | float64] struct {
 	aggregateFunc func(int64, attribute.Set)
 
 	embedded.Counter[int64]
@@ -94,8 +94,8 @@ type inst struct {
 	embedded.Histogram[int64]
 }
 
-func (inst) Add(context.Context, int64, ...attribute.KeyValue)    {}
-func (inst) Record(context.Context, int64, ...attribute.KeyValue) {}
+func (inst[N]) Add(context.Context, int64, ...instrument.AddOption[N])       {}
+func (inst[N]) Record(context.Context, int64, ...instrument.RecordOption[N]) {}
 
 func Example() {
 	m := meter{}

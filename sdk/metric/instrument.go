@@ -185,24 +185,22 @@ var _ instrument.Counter[int64] = (*instrumentImpl[int64])(nil)
 var _ instrument.UpDownCounter[int64] = (*instrumentImpl[int64])(nil)
 var _ instrument.Histogram[int64] = (*instrumentImpl[int64])(nil)
 
-func (i *instrumentImpl[N]) Add(ctx context.Context, val N, attrs ...attribute.KeyValue) {
-	i.aggregate(ctx, val, attrs)
+func (i *instrumentImpl[N]) Add(ctx context.Context, val N, opts ...instrument.AddOption[N]) {
+	cfg := instrument.NewAddConfig(opts)
+	i.aggregate(ctx, val, cfg.Attributes())
 }
 
-func (i *instrumentImpl[N]) Record(ctx context.Context, val N, attrs ...attribute.KeyValue) {
-	i.aggregate(ctx, val, attrs)
+func (i *instrumentImpl[N]) Record(ctx context.Context, val N, opts ...instrument.RecordOption[N]) {
+	cfg := instrument.NewRecordConfig(opts)
+	i.aggregate(ctx, val, cfg.Attributes())
 }
 
-func (i *instrumentImpl[N]) aggregate(ctx context.Context, val N, attrs []attribute.KeyValue) {
+func (i *instrumentImpl[N]) aggregate(ctx context.Context, val N, attrs attribute.Set) {
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	// Do not use single attribute.Sortable and attribute.NewSetWithSortable,
-	// this method needs to be concurrent safe. Let the sync.Pool in the
-	// attribute package handle allocations of the Sortable.
-	s := attribute.NewSet(attrs...)
 	for _, agg := range i.aggregators {
-		agg.Aggregate(val, s)
+		agg.Aggregate(val, attrs)
 	}
 }
 
@@ -239,13 +237,9 @@ func newObservable[N int64 | float64](scope instrumentation.Scope, kind Instrume
 }
 
 // observe records the val for the set of attrs.
-func (o *observable[N]) observe(val N, attrs []attribute.KeyValue) {
-	// Do not use single attribute.Sortable and attribute.NewSetWithSortable,
-	// this method needs to be concurrent safe. Let the sync.Pool in the
-	// attribute package handle allocations of the Sortable.
-	s := attribute.NewSet(attrs...)
+func (o *observable[N]) observe(val N, attrs attribute.Set) {
 	for _, agg := range o.aggregators {
-		agg.Aggregate(val, s)
+		agg.Aggregate(val, attrs)
 	}
 }
 

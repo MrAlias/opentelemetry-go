@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/internal/global"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/embedded"
@@ -297,7 +296,7 @@ var (
 	errUnregObserver   = errors.New("observable instrument not registered for callback")
 )
 
-func (r observer) ObserveFloat64(o instrument.ObservableT[float64], v float64, a ...attribute.KeyValue) {
+func (r observer) ObserveFloat64(o instrument.ObservableT[float64], v float64, opts ...instrument.ObserveOption[float64]) {
 	var oImpl *observable[float64]
 	switch conv := o.(type) {
 	case *observable[float64]:
@@ -326,10 +325,11 @@ func (r observer) ObserveFloat64(o instrument.ObservableT[float64], v float64, a
 		)
 		return
 	}
-	oImpl.observe(v, a)
+	cfg := instrument.NewObserveConfig(opts)
+	oImpl.observe(v, cfg.Attributes())
 }
 
-func (r observer) ObserveInt64(o instrument.ObservableT[int64], v int64, a ...attribute.KeyValue) {
+func (r observer) ObserveInt64(o instrument.ObservableT[int64], v int64, opts ...instrument.ObserveOption[int64]) {
 	var oImpl *observable[int64]
 	switch conv := o.(type) {
 	case *observable[int64]:
@@ -358,7 +358,8 @@ func (r observer) ObserveInt64(o instrument.ObservableT[int64], v int64, a ...at
 		)
 		return
 	}
-	oImpl.observe(v, a)
+	cfg := instrument.NewObserveConfig(opts)
+	oImpl.observe(v, cfg.Attributes())
 }
 
 type noopRegister struct{ embedded.Registration }
@@ -425,6 +426,7 @@ type observerT[N int64 | float64] struct {
 	*observable[N]
 }
 
-func (o observerT[N]) Observe(val N, attrs ...attribute.KeyValue) {
-	o.observe(val, attrs)
+func (o observerT[N]) Observe(val N, opts ...instrument.ObserveOption[N]) {
+	cfg := instrument.NewObserveConfig(opts)
+	o.observe(val, cfg.Attributes())
 }

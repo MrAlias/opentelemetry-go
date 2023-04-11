@@ -45,16 +45,18 @@ func BenchmarkCounterAddNoAttrs(b *testing.B) {
 func BenchmarkCounterAddOneAttr(b *testing.B) {
 	ctx, _, cntr := benchCounter(b)
 
+	attrs := attribute.NewSet(attribute.String("K", "V"))
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.String("K", "V"))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 	}
 }
 
 func BenchmarkCounterAddOneInvalidAttr(b *testing.B) {
 	ctx, _, cntr := benchCounter(b)
 
+	attrs := attribute.NewSet(attribute.String("", "V"), attribute.String("K", "V"))
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.String("", "V"), attribute.String("K", "V"))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 	}
 }
 
@@ -62,7 +64,8 @@ func BenchmarkCounterAddSingleUseAttrs(b *testing.B) {
 	ctx, _, cntr := benchCounter(b)
 
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.Int("K", i))
+		attrs := attribute.NewSet(attribute.Int("K", i))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 	}
 }
 
@@ -70,7 +73,8 @@ func BenchmarkCounterAddSingleUseInvalidAttrs(b *testing.B) {
 	ctx, _, cntr := benchCounter(b)
 
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.Int("", i), attribute.Int("K", i))
+		attrs := attribute.NewSet(attribute.Int("", i), attribute.Int("K", i))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 	}
 }
 
@@ -83,15 +87,17 @@ func BenchmarkCounterAddSingleUseFilteredAttrs(b *testing.B) {
 	))
 
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.Int("L", i), attribute.Int("K", i))
+		attrs := attribute.NewSet(attribute.Int("L", i), attribute.Int("K", i))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 	}
 }
 
 func BenchmarkCounterCollectOneAttr(b *testing.B) {
 	ctx, rdr, cntr := benchCounter(b)
 
+	attrs := attribute.NewSet(attribute.Int("K", 1))
 	for i := 0; i < b.N; i++ {
-		cntr.Add(ctx, 1, attribute.Int("K", 1))
+		cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 
 		_ = rdr.Collect(ctx, nil)
 	}
@@ -102,7 +108,8 @@ func BenchmarkCounterCollectTenAttrs(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		for j := 0; j < 10; j++ {
-			cntr.Add(ctx, 1, attribute.Int("K", j))
+			attrs := attribute.NewSet(attribute.Int("K", j))
+			cntr.Add(ctx, 1, instrument.WithAttributeSet[int64](attrs))
 		}
 		_ = rdr.Collect(ctx, nil)
 	}
