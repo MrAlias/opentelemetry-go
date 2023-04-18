@@ -59,8 +59,13 @@ func newFilter[N int64 | float64](agg Aggregator[N], fn attribute.Filter) *filte
 // Aggregate records the measurement, scoped by attr, and aggregates it
 // into an aggregation.
 func (f *filter[N]) Aggregate(measurement N, attr attribute.Set) {
-	fAttr, _ := attr.Filter(f.filter)
+	_ = f.aggregate(measurement, attr)
+}
+
+func (f *filter[N]) aggregate(measurement N, attr attribute.Set) []attribute.KeyValue {
+	fAttr, dropped := attr.Filter(f.filter)
 	f.aggregator.Aggregate(measurement, fAttr)
+	return dropped
 }
 
 // Aggregation returns an Aggregation, for all the aggregated
@@ -94,13 +99,18 @@ func newPrecomputedFilter[N int64 | float64](agg precomputeAggregator[N], fn att
 // Aggregate records the measurement, scoped by attr, and aggregates it
 // into an aggregation.
 func (f *precomputedFilter[N]) Aggregate(measurement N, attr attribute.Set) {
-	fAttr, _ := attr.Filter(f.filter)
+	_ = f.aggregate(measurement, attr)
+}
+
+func (f *precomputedFilter[N]) aggregate(measurement N, attr attribute.Set) []attribute.KeyValue {
+	fAttr, dropped := attr.Filter(f.filter)
 	if fAttr.Equals(&attr) {
 		// No filtering done.
 		f.aggregator.Aggregate(measurement, fAttr)
 	} else {
 		f.aggregator.aggregateFiltered(measurement, fAttr)
 	}
+	return dropped
 }
 
 // Aggregation returns an Aggregation, for all the aggregated

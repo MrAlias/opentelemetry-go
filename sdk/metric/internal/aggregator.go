@@ -15,6 +15,7 @@
 package internal // import "go.opentelemetry.io/otel/sdk/metric/internal"
 
 import (
+	"context"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -30,9 +31,21 @@ var now = time.Now
 // Aggregators need to be comparable so they can be de-duplicated by the SDK
 // when it creates them for multiple views.
 type Aggregator[N int64 | float64] interface {
-	// Aggregate records the measurement, scoped by attr, and aggregates it
-	// into an aggregation.
+	// Aggregate records the measurement, scoped by attr, and aggregates
+	// it into an aggregation.
 	Aggregate(measurement N, attr attribute.Set)
+
+	// Aggregation returns an Aggregation, for all the aggregated
+	// measurements made and ends an aggregation cycle.
+	Aggregation() metricdata.Aggregation
+}
+
+type ContextAggregator[N int64 | float64] interface {
+	// Aggregate records the measurement value, scoped by attr, and aggregates
+	// it into an aggregation.
+	//
+	// Any attributes dropped will be returned.
+	Aggregate(ctx context.Context, value N, attr attribute.Set)
 
 	// Aggregation returns an Aggregation, for all the aggregated
 	// measurements made and ends an aggregation cycle.
