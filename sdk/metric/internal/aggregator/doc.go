@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package internal provides types and functionality used to aggregate and
+// Package aggregator provides types and functionality used to aggregate and
 // cycle the state of metric measurements made by the SDK. These types and
 // functionality are meant only for internal SDK use.
-package internal // import "go.opentelemetry.io/otel/sdk/metric/internal"
+package aggregator // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregator"
