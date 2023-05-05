@@ -21,60 +21,35 @@ import (
 
 type fold[T any] func(T, T) T
 
-type mapper[T any] func([]T) []T
-
-// TODO: generalize with filterHistogramDataPoint
-func filterDataPoints[N int64 | float64](f attribute.Filter, merge fold[metricdata.DataPoint[N]]) mapper[metricdata.DataPoint[N]] {
-	return func(data []metricdata.DataPoint[N]) []metricdata.DataPoint[N] {
+func filter[N int64 | float64, T any](f attribute.Filter, merge fold[T], item accessor[N, T]) func(iter *iterator[T]) []T {
+	return func(iter *iterator[T]) []T {
 		index := make(map[attribute.Set]int)
-		var i int
-		for _, d := range data {
-			filtered, dropped := d.Attributes.Filter(f)
-			if len(dropped) > 0 {
-				d.Exemplars = setDropped(dropped, d.Exemplars)
-				d.Attributes = filtered
-			}
+		for iter.next() {
+			item.wrap(iter.get())
 
-			if idx, ok := index[filtered]; ok {
-				data[idx] = merge(data[idx], d)
-				data = append(data[:i], data[i+1:]...)
+			fltr := item.filter(f)
+			if idx, ok := index[fltr]; ok {
+				iter.setAt(idx, merge(iter.getAt(idx), item.unwrap()))
+				iter.delete()
 			} else {
-				index[filtered] = i
-				data[i] = d
-				i++
+				index[fltr] = iter.index()
+				iter.set(item.unwrap())
 			}
 		}
-		return data[:i]
+		return iter.slice()
 	}
 }
 
-func filterHistogramDataPoint[N int64 | float64](f attribute.Filter, merge fold[metricdata.HistogramDataPoint[N]]) mapper[metricdata.HistogramDataPoint[N]] {
-	return func(data []metricdata.HistogramDataPoint[N]) []metricdata.HistogramDataPoint[N] {
-		index := make(map[attribute.Set]int)
-		var i int
-		for _, d := range data {
-			filtered, dropped := d.Attributes.Filter(f)
-			if len(dropped) > 0 {
-				d.Exemplars = setDropped(dropped, d.Exemplars)
-				d.Attributes = filtered
-			}
-
-			if idx, ok := index[filtered]; ok {
-				data[idx] = merge(data[idx], d)
-				data = append(data[:i], data[i+1:]...)
-			} else {
-				index[filtered] = i
-				data[i] = d
-				i++
-			}
-		}
-		return data[:i]
+func filterDPtFn[N int64 | float64](f attribute.Filter, merge fold[metricdata.DataPoint[N]]) func([]metricdata.DataPoint[N]) []metricdata.DataPoint[N] {
+	fltr := filter[N, metricdata.DataPoint[N]](f, merge, &dPt[N]{})
+	return func(d []metricdata.DataPoint[N]) []metricdata.DataPoint[N] {
+		return fltr(newIterator(d))
 	}
 }
 
-func setDropped[N int64 | float64](dropped []attribute.KeyValue, exemplar []metricdata.Exemplar[N]) []metricdata.Exemplar[N] {
-	for _, e := range exemplar {
-		e.FilteredAttributes = append(e.FilteredAttributes, dropped...)
+func filterHistDPtFn[N int64 | float64](f attribute.Filter, merge fold[metricdata.HistogramDataPoint[N]]) func([]metricdata.HistogramDataPoint[N]) []metricdata.HistogramDataPoint[N] {
+	fltr := filter[N, metricdata.HistogramDataPoint[N]](f, merge, &histDPt[N]{})
+	return func(d []metricdata.HistogramDataPoint[N]) []metricdata.HistogramDataPoint[N] {
+		return fltr(newIterator(d))
 	}
-	return exemplar
 }

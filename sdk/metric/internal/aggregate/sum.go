@@ -23,17 +23,44 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func newSum[N int64 | float64](a function[N, metricdata.DataPoint[N]], mono bool, t metricdata.Temporality, f attribute.Filter) (Input[N], Output) {
-	// TODO: support exemplar offering here.
-	in := func(_ context.Context, n N, s attribute.Set) {
-		a.input(n, s)
+func newSum[N int64 | float64](a function[N, metricdata.DataPoint[N]], r *reservoir[N, metricdata.DataPoint[N]], mono bool, t metricdata.Temporality, f attribute.Filter) (Input[N], Output) {
+	var (
+		in  Input[N]
+		set func(*metricdata.Sum[N])
+	)
+	if r == nil {
+		in = func(_ context.Context, n N, attr attribute.Set) { a.input(n, attr) }
+		set = func(dest *metricdata.Sum[N]) {
+			dest.Temporality = t
+			dest.IsMonotonic = mono
+			a.output(&dest.DataPoints)
+		}
+	} else {
+		in = func(ctx context.Context, n N, attr attribute.Set) {
+			var wg sync.WaitGroup
+
+			wg.Add(1)
+			go func(t time.Time) {
+				defer wg.Done()
+				r.offer(ctx, t, n, attr)
+			}(now())
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				a.input(n, attr)
+			}()
+
+			wg.Wait()
+		}
+		set = func(dest *metricdata.Sum[N]) {
+			dest.Temporality = t
+			dest.IsMonotonic = mono
+			a.output(&dest.DataPoints)
+			r.exemplars(newIterator(dest.DataPoints))
+		}
 	}
 
-	set := func(dest *metricdata.Sum[N]) {
-		dest.Temporality = t
-		dest.IsMonotonic = mono
-		a.output(&dest.DataPoints)
-	}
 	var out Output
 	if f == nil {
 		out = func(dest *metricdata.Aggregation) {
@@ -44,11 +71,11 @@ func newSum[N int64 | float64](a function[N, metricdata.DataPoint[N]], mono bool
 			*dest = sData
 		}
 	} else {
-		mapper := filterDataPoints(f, foldSum[N])
+		fltr := filterDPtFn(f, foldSum[N])
 		out = func(dest *metricdata.Aggregation) {
 			sData, _ := (*dest).(metricdata.Sum[N])
 			set(&sData)
-			sData.DataPoints = mapper(sData.DataPoints)
+			sData.DataPoints = fltr(sData.DataPoints)
 			*dest = sData
 		}
 	}

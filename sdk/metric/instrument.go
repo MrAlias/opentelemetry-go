@@ -24,7 +24,7 @@ import (
 	"go.opentelemetry.io/otel/metric/instrument"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric/aggregation"
-	"go.opentelemetry.io/otel/sdk/metric/internal"
+	"go.opentelemetry.io/otel/sdk/metric/internal/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
@@ -171,7 +171,7 @@ type streamID struct {
 }
 
 type instrumentImpl[N int64 | float64] struct {
-	aggregators []internal.Aggregator[N]
+	aggregators []aggregator.Aggregator[N]
 
 	embedded.Float64Counter
 	embedded.Float64UpDownCounter
@@ -231,7 +231,7 @@ var _ instrument.Float64ObservableCounter = float64Observable{}
 var _ instrument.Float64ObservableUpDownCounter = float64Observable{}
 var _ instrument.Float64ObservableGauge = float64Observable{}
 
-func newFloat64Observable(scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []internal.Aggregator[float64]) float64Observable {
+func newFloat64Observable(scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []aggregator.Aggregator[float64]) float64Observable {
 	return float64Observable{
 		observable: newObservable(scope, kind, name, desc, u, agg),
 	}
@@ -250,7 +250,7 @@ var _ instrument.Int64ObservableCounter = int64Observable{}
 var _ instrument.Int64ObservableUpDownCounter = int64Observable{}
 var _ instrument.Int64ObservableGauge = int64Observable{}
 
-func newInt64Observable(scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []internal.Aggregator[int64]) int64Observable {
+func newInt64Observable(scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []aggregator.Aggregator[int64]) int64Observable {
 	return int64Observable{
 		observable: newObservable(scope, kind, name, desc, u, agg),
 	}
@@ -260,10 +260,10 @@ type observable[N int64 | float64] struct {
 	instrument.Observable
 	observablID[N]
 
-	aggregators []internal.Aggregator[N]
+	aggregators []aggregator.Aggregator[N]
 }
 
-func newObservable[N int64 | float64](scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []internal.Aggregator[N]) *observable[N] {
+func newObservable[N int64 | float64](scope instrumentation.Scope, kind InstrumentKind, name, desc, u string, agg []aggregator.Aggregator[N]) *observable[N] {
 	return &observable[N]{
 		observablID: observablID[N]{
 			name:        name,

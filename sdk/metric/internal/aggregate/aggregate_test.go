@@ -82,13 +82,11 @@ func TestDeltaSumAggregatorExemplars(t *testing.T) {
 				StartTime:  staticTime,
 				Time:       staticTime,
 				Value:      4,
-				/*
-					Exemplars: []metricdata.Exemplar[int64]{{
-						FilteredAttributes: []attribute.KeyValue{adminTrue},
-						Time:               staticTime,
-						Value:              2,
-					}},
-				*/
+				Exemplars: []metricdata.Exemplar[int64]{{
+					FilteredAttributes: []attribute.KeyValue{adminTrue},
+					Time:               staticTime,
+					Value:              2,
+				}},
 			},
 			{
 				Attributes: fBob,

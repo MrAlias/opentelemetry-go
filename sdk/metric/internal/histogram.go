@@ -12,10 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregate"
+package internal // import "go.opentelemetry.io/otel/sdk/metric/internal"
 
 import (
-	"context"
 	"sort"
 	"sync"
 	"time"
@@ -24,100 +23,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
-
-func newHistogram[N int64 | float64](r *reservoir[N, metricdata.HistogramDataPoint[N]], cfg aggregation.ExplicitBucketHistogram, t metricdata.Temporality, f attribute.Filter) (Input[N], Output) {
-	var a function[N, metricdata.HistogramDataPoint[N]]
-	switch t {
-	case metricdata.DeltaTemporality:
-		a = newDeltaHistogram[N](cfg)
-	default:
-		a = newCumulativeHistogram[N](cfg)
-	}
-
-	var (
-		in  Input[N]
-		set func(*metricdata.Histogram[N])
-	)
-	if r == nil {
-		in = func(_ context.Context, n N, attr attribute.Set) { a.input(n, attr) }
-		set = func(dest *metricdata.Histogram[N]) {
-			dest.Temporality = t
-			a.output(&dest.DataPoints)
-		}
-	} else {
-		in = func(ctx context.Context, n N, attr attribute.Set) {
-			var wg sync.WaitGroup
-
-			wg.Add(1)
-			go func(t time.Time) {
-				defer wg.Done()
-				r.offer(ctx, t, n, attr)
-			}(now())
-
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				a.input(n, attr)
-			}()
-
-			wg.Wait()
-		}
-		set = func(dest *metricdata.Histogram[N]) {
-			dest.Temporality = t
-			a.output(&dest.DataPoints)
-			r.exemplars(newIterator(dest.DataPoints))
-		}
-	}
-
-	var out Output
-	if f == nil {
-		out = func(dest *metricdata.Aggregation) {
-			// Ignore if dest is not a metricdata.Histogram. The chance for
-			// memory reuse of the DataPoints is missed (better luck next
-			// time).
-			hData, _ := (*dest).(metricdata.Histogram[N])
-			set(&hData)
-			*dest = hData
-		}
-	} else {
-		fltr := filterHistDPtFn(f, foldHist[N])
-		out = func(dest *metricdata.Aggregation) {
-			hData, _ := (*dest).(metricdata.Histogram[N])
-			set(&hData)
-			hData.DataPoints = fltr(hData.DataPoints)
-			*dest = hData
-		}
-	}
-	return in, out
-}
-
-func foldHist[N int64 | float64](a, b metricdata.HistogramDataPoint[N]) metricdata.HistogramDataPoint[N] {
-	// Assumes attributes, bounds, and time are the same given these are
-	// assumed histograms from the same collection cycle for the same histogram.
-	if a.StartTime.After(b.StartTime) {
-		a.StartTime = b.StartTime
-	}
-	a.Count += b.Count
-	for i, n := range b.BucketCounts {
-		a.BucketCounts[i] += n
-	}
-
-	aMin, aDefined := a.Min.Value()
-	bMin, bDefined := a.Min.Value()
-	if bDefined && (!aDefined || (aMin > bMin)) {
-		a.Min = b.Min
-	}
-
-	aMax, aDefined := a.Min.Value()
-	bMax, bDefined := a.Min.Value()
-	if bDefined && (!aDefined || (aMax < bMax)) {
-		a.Max = b.Max
-	}
-
-	a.Sum += b.Sum
-	a.Exemplars = append(a.Exemplars, b.Exemplars...)
-	return a
-}
 
 type buckets[N int64 | float64] struct {
 	counts   []uint64
@@ -167,7 +72,7 @@ func newHistValues[N int64 | float64](bounds []float64) *histValues[N] {
 
 // Aggregate records the measurement value, scoped by attr, and aggregates it
 // into a histogram.
-func (s *histValues[N]) input(value N, attr attribute.Set) {
+func (s *histValues[N]) Aggregate(value N, attr attribute.Set) {
 	// This search will return an index in the range [0, len(s.bounds)], where
 	// it will return len(s.bounds) if value is greater than the last element
 	// of s.bounds. This aligns with the buckets in that the length of buckets
@@ -202,7 +107,7 @@ func (s *histValues[N]) input(value N, attr attribute.Set) {
 // Each aggregation cycle is treated independently. When the returned
 // Aggregator's Aggregations method is called it will reset all histogram
 // counts to zero.
-func newDeltaHistogram[N int64 | float64](cfg aggregation.ExplicitBucketHistogram) *deltaHistogram[N] {
+func NewDeltaHistogram[N int64 | float64](cfg aggregation.ExplicitBucketHistogram) Aggregator[N] {
 	return &deltaHistogram[N]{
 		histValues: newHistValues[N](cfg.Boundaries),
 		noMinMax:   cfg.NoMinMax,
@@ -219,44 +124,44 @@ type deltaHistogram[N int64 | float64] struct {
 	start    time.Time
 }
 
-func (s *deltaHistogram[N]) output(dest *[]metricdata.HistogramDataPoint[N]) {
+func (s *deltaHistogram[N]) Aggregation() metricdata.Aggregation {
 	s.valuesMu.Lock()
 	defer s.valuesMu.Unlock()
 
+	if len(s.values) == 0 {
+		return nil
+	}
+
 	t := now()
-	nBounds := len(s.bounds)
-	*dest = minCap(*dest, len(s.values))
-	var i int
+	// Do not allow modification of our copy of bounds.
+	bounds := make([]float64, len(s.bounds))
+	copy(bounds, s.bounds)
+	h := metricdata.Histogram[N]{
+		Temporality: metricdata.DeltaTemporality,
+		DataPoints:  make([]metricdata.HistogramDataPoint[N], 0, len(s.values)),
+	}
 	for a, b := range s.values {
 		hdp := metricdata.HistogramDataPoint[N]{
-			Attributes: a,
-			StartTime:  s.start,
-			Time:       t,
-			Count:      b.count,
-			// TODO: It is inefficient to not pool b.counts and just copy
-			// values here similar to the cumulative case.
+			Attributes:   a,
+			StartTime:    s.start,
+			Time:         t,
+			Count:        b.count,
+			Bounds:       bounds,
 			BucketCounts: b.counts,
 			Sum:          b.sum,
 		}
-
-		// Do not allow modification of our copy of bounds.
-		bounds := (*dest)[i].Bounds
-		minCap(bounds, nBounds)
-		copy(bounds, s.bounds)
-		hdp.Bounds = bounds
-
 		if !s.noMinMax {
 			hdp.Min = metricdata.NewExtrema(b.min)
 			hdp.Max = metricdata.NewExtrema(b.max)
 		}
-		(*dest)[i] = hdp
-		i++
+		h.DataPoints = append(h.DataPoints, hdp)
 
 		// Unused attribute sets do not report.
 		delete(s.values, a)
 	}
 	// The delta collection cycle resets.
 	s.start = t
+	return h
 }
 
 // NewCumulativeHistogram returns an Aggregator that summarizes a set of
@@ -265,7 +170,7 @@ func (s *deltaHistogram[N]) output(dest *[]metricdata.HistogramDataPoint[N]) {
 // Each aggregation cycle builds from the previous, the histogram counts are
 // the bucketed counts of all values aggregated since the returned Aggregator
 // was created.
-func newCumulativeHistogram[N int64 | float64](cfg aggregation.ExplicitBucketHistogram) *cumulativeHistogram[N] {
+func NewCumulativeHistogram[N int64 | float64](cfg aggregation.ExplicitBucketHistogram) Aggregator[N] {
 	return &cumulativeHistogram[N]{
 		histValues: newHistValues[N](cfg.Boundaries),
 		noMinMax:   cfg.NoMinMax,
@@ -282,45 +187,49 @@ type cumulativeHistogram[N int64 | float64] struct {
 	start    time.Time
 }
 
-func (s *cumulativeHistogram[N]) output(dest *[]metricdata.HistogramDataPoint[N]) {
+func (s *cumulativeHistogram[N]) Aggregation() metricdata.Aggregation {
 	s.valuesMu.Lock()
 	defer s.valuesMu.Unlock()
 
-	t := now()
-	nBounds := len(s.bounds)
-	*dest = minCap(*dest, len(s.values))
-	var i int
-	for a, b := range s.values {
-		hdp := metricdata.HistogramDataPoint[N]{
-			Attributes: a,
-			StartTime:  s.start,
-			Time:       t,
-			Count:      b.count,
-			Sum:        b.sum,
-		}
+	if len(s.values) == 0 {
+		return nil
+	}
 
+	t := now()
+	// Do not allow modification of our copy of bounds.
+	bounds := make([]float64, len(s.bounds))
+	copy(bounds, s.bounds)
+	h := metricdata.Histogram[N]{
+		Temporality: metricdata.CumulativeTemporality,
+		DataPoints:  make([]metricdata.HistogramDataPoint[N], 0, len(s.values)),
+	}
+	for a, b := range s.values {
 		// The HistogramDataPoint field values returned need to be copies of
 		// the buckets value as we will keep updating them.
-		counts := (*dest)[i].BucketCounts
-		minCap(counts, nBounds+1)
+		//
+		// TODO (#3047): Making copies for bounds and counts incurs a large
+		// memory allocation footprint. Alternatives should be explored.
+		counts := make([]uint64, len(b.counts))
 		copy(counts, b.counts)
-		hdp.BucketCounts = counts
 
-		// Do not allow modification of our copy of bounds.
-		bounds := (*dest)[i].Bounds
-		minCap(bounds, nBounds)
-		copy(bounds, s.bounds)
-		hdp.Bounds = bounds
-
+		hdp := metricdata.HistogramDataPoint[N]{
+			Attributes:   a,
+			StartTime:    s.start,
+			Time:         t,
+			Count:        b.count,
+			Bounds:       bounds,
+			BucketCounts: counts,
+			Sum:          b.sum,
+		}
 		if !s.noMinMax {
 			hdp.Min = metricdata.NewExtrema(b.min)
 			hdp.Max = metricdata.NewExtrema(b.max)
 		}
-		(*dest)[i] = hdp
-		i++
+		h.DataPoints = append(h.DataPoints, hdp)
 		// TODO (#3006): This will use an unbounded amount of memory if there
 		// are unbounded number of attribute sets being aggregated. Attribute
 		// sets that become "stale" need to be forgotten so this will not
 		// overload the system.
 	}
+	return h
 }

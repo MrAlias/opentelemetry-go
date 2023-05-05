@@ -23,12 +23,40 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-func newLastValue[N int64 | float64](f attribute.Filter) (Input[N], Output) {
+func newLastValue[N int64 | float64](r *reservoir[N, metricdata.DataPoint[N]], f attribute.Filter) (Input[N], Output) {
 	lv := &lastValue[N]{values: make(map[attribute.Set]datapoint[N])}
 
-	// TODO: support exemplar offering here.
-	in := func(_ context.Context, n N, s attribute.Set) {
-		lv.input(n, s)
+	var (
+		in  Input[N]
+		set func(*metricdata.Gauge[N])
+	)
+	if r == nil {
+		in = func(_ context.Context, n N, a attribute.Set) {
+			lv.input(n, a)
+		}
+		set = func(dest *metricdata.Gauge[N]) { lv.output(&dest.DataPoints) }
+	} else {
+		in = func(ctx context.Context, n N, a attribute.Set) {
+			var wg sync.WaitGroup
+
+			wg.Add(1)
+			go func(t time.Time) {
+				defer wg.Done()
+				r.offer(ctx, t, n, a)
+			}(now())
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				lv.input(n, a)
+			}()
+
+			wg.Wait()
+		}
+		set = func(dest *metricdata.Gauge[N]) {
+			lv.output(&dest.DataPoints)
+			r.exemplars(newIterator(dest.DataPoints))
+		}
 	}
 
 	var out Output
@@ -37,15 +65,15 @@ func newLastValue[N int64 | float64](f attribute.Filter) (Input[N], Output) {
 			// Ignore if dest is not a metricdata.Gauge. The chance for memory
 			// reuse of the DataPoints is missed (better luck next time).
 			gData, _ := (*dest).(metricdata.Gauge[N])
-			lv.output(&gData.DataPoints)
+			set(&gData)
 			*dest = gData
 		}
 	} else {
-		mapper := filterDataPoints(f, foldGauge[N])
+		fltr := filterDPtFn(f, foldGauge[N])
 		out = func(dest *metricdata.Aggregation) {
 			gData, _ := (*dest).(metricdata.Gauge[N])
-			lv.output(&gData.DataPoints)
-			gData.DataPoints = mapper(gData.DataPoints)
+			set(&gData)
+			gData.DataPoints = fltr(gData.DataPoints)
 			*dest = gData
 		}
 	}

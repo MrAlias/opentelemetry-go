@@ -28,23 +28,46 @@ type Builder[N int64 | float64] struct {
 	Reservoir   exemplar.Reservoir[N]
 }
 
+func (b Builder[N]) dPtRes() *reservoir[N, metricdata.DataPoint[N]] {
+	switch b.Temporality {
+	case metricdata.DeltaTemporality:
+		return newDeltaReservoir[N, metricdata.DataPoint[N]](b.Reservoir, &dPt[N]{})
+	default:
+		return newCumulativeReservoir[N, metricdata.DataPoint[N]](b.Reservoir, &dPt[N]{})
+	}
+}
+
+func (b Builder[N]) histRes() *reservoir[N, metricdata.HistogramDataPoint[N]] {
+	switch b.Temporality {
+	case metricdata.DeltaTemporality:
+		return newDeltaReservoir[N, metricdata.HistogramDataPoint[N]](b.Reservoir, &histDPt[N]{})
+	default:
+		return newCumulativeReservoir[N, metricdata.HistogramDataPoint[N]](b.Reservoir, &histDPt[N]{})
+	}
+}
+
 func (b Builder[N]) LastValue() (Input[N], Output) {
-	return newLastValue[N](b.Filter)
+	// Delta temporality is the only temporality that makes semantic sense for
+	// a last-value aggregate.
+	res := newDeltaReservoir[N, metricdata.DataPoint[N]](b.Reservoir, &dPt[N]{})
+	return newLastValue(res, b.Filter)
 }
 
 func (b Builder[N]) ExplicitBucketHistogram(cfg aggregation.ExplicitBucketHistogram) (Input[N], Output) {
-	return newHistogram[N](cfg, b.Temporality, b.Filter)
+	return newHistogram[N](b.histRes(), cfg, b.Temporality, b.Filter)
 }
 
 func (b Builder[N]) PrecomputedSum(monotonic bool) (Input[N], Output) {
-	var a function[N, metricdata.DataPoint[N]]
+	var (
+		a function[N, metricdata.DataPoint[N]]
+	)
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
 		a = newPrecomputedDeltaSum[N](monotonic)
 	default:
 		a = newPrecomputedCumulativeSum[N](monotonic)
 	}
-	return newSum(a, monotonic, b.Temporality, b.Filter)
+	return newSum(a, b.dPtRes(), monotonic, b.Temporality, b.Filter)
 }
 
 func (b Builder[N]) Sum(monotonic bool) (Input[N], Output) {
@@ -55,5 +78,5 @@ func (b Builder[N]) Sum(monotonic bool) (Input[N], Output) {
 	default:
 		a = newCumulativeSum[N](monotonic)
 	}
-	return newSum(a, monotonic, b.Temporality, b.Filter)
+	return newSum(a, b.dPtRes(), monotonic, b.Temporality, b.Filter)
 }

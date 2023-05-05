@@ -16,15 +16,10 @@ package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggreg
 
 import (
 	"context"
-	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
-
-// now is used to return the current local time while allowing tests to
-// override the default time.Now function.
-var now = time.Now
 
 type Input[N int64 | float64] func(context.Context, N, attribute.Set)
 
@@ -34,26 +29,11 @@ func (f Input[N]) Async(v N, a attribute.Set) { f(bgCtx, v, a) }
 
 type Output func(dest *metricdata.Aggregation)
 
-type function[N int64 | float64, D any] interface {
+type function[N int64 | float64, A aggregate[N]] interface {
 	input(measurement N, attr attribute.Set)
-	output(dest *[]D)
+	output(dest *[]A)
 }
 
-type aggregator[N int64 | float64, D any] interface {
-	aggregate(context.Context, N, attribute.Set)
-	aggergation(dest *D)
-}
-
-func minCapEmpty[T any](v []T, n int) []T {
-	if cap(v) < n {
-		return make([]T, 0, n)
-	}
-	return v[:0]
-}
-
-func minCap[T any](v []T, n int) []T {
-	if cap(v) < n {
-		return make([]T, n)
-	}
-	return v[:n]
+type aggregate[N int64 | float64] interface {
+	metricdata.DataPoint[N] | metricdata.HistogramDataPoint[N]
 }
