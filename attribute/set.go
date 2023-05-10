@@ -29,14 +29,8 @@ type (
 	// This type supports the Equivalent method of comparison using values of
 	// type Distinct.
 	Set struct {
-		equivalent Distinct
-	}
-
-	// Distinct wraps a variable-size array of KeyValue, constructed with keys
-	// in sorted order. This can be used as a map key or for equality checking
-	// between Sets.
-	Distinct struct {
-		iface interface{}
+		distinct Distinct
+		data     interface{}
 	}
 
 	// Filter supports removing certain attributes from attribute sets. When
@@ -59,9 +53,8 @@ var (
 
 	// emptySet is returned for empty attribute sets.
 	emptySet = &Set{
-		equivalent: Distinct{
-			iface: [0]KeyValue{},
-		},
+		distinct: NewDistinct(nil),
+		data:     [0]KeyValue{},
 	}
 
 	// sortables is a pool of Sortables used to create Sets with a user does
@@ -79,29 +72,24 @@ func EmptySet() *Set {
 }
 
 // reflectValue abbreviates reflect.ValueOf(d).
-func (d Distinct) reflectValue() reflect.Value {
-	return reflect.ValueOf(d.iface)
-}
-
-// Valid returns true if this value refers to a valid Set.
-func (d Distinct) Valid() bool {
-	return d.iface != nil
+func (s *Set) reflectValue() reflect.Value {
+	return reflect.ValueOf(s.data)
 }
 
 // Len returns the number of attributes in this set.
 func (l *Set) Len() int {
-	if l == nil || !l.equivalent.Valid() {
+	if l == nil || l.data == nil {
 		return 0
 	}
-	return l.equivalent.reflectValue().Len()
+	return l.reflectValue().Len()
 }
 
 // Get returns the KeyValue at ordered position idx in this set.
 func (l *Set) Get(idx int) (KeyValue, bool) {
-	if l == nil || !l.equivalent.Valid() {
+	if l == nil || l.data == nil {
 		return KeyValue{}, false
 	}
-	value := l.equivalent.reflectValue()
+	value := l.reflectValue()
 
 	if idx >= 0 && idx < value.Len() {
 		// Note: The Go compiler successfully avoids an allocation for
@@ -114,10 +102,10 @@ func (l *Set) Get(idx int) (KeyValue, bool) {
 
 // Value returns the value of a specified key in this set.
 func (l *Set) Value(k Key) (Value, bool) {
-	if l == nil || !l.equivalent.Valid() {
+	if l == nil || l.data == nil {
 		return Value{}, false
 	}
-	rValue := l.equivalent.reflectValue()
+	rValue := l.reflectValue()
 	vlen := rValue.Len()
 
 	idx := sort.Search(vlen, func(idx int) bool {
@@ -144,8 +132,14 @@ func (l *Set) HasValue(k Key) bool {
 
 // Iter returns an iterator for visiting the attributes in this set.
 func (l *Set) Iter() Iterator {
+	if l == nil || l.data == nil {
+		return Iterator{
+			storage: reflect.ValueOf(emptySet.data),
+			idx:     -1,
+		}
+	}
 	return Iterator{
-		storage: l,
+		storage: l.reflectValue(),
 		idx:     -1,
 	}
 }
@@ -157,20 +151,25 @@ func (l *Set) ToSlice() []KeyValue {
 	return iter.ToSlice()
 }
 
-// Equivalent returns a value that may be used as a map key. The Distinct type
-// guarantees that the result will equal the equivalent. Distinct value of any
-// attribute set with the same elements as this, where sets are made unique by
-// choosing the last value in the input for any given key.
-func (l *Set) Equivalent() Distinct {
-	if l == nil || !l.equivalent.Valid() {
-		return emptySet.equivalent
-	}
-	return l.equivalent
+// ToCollection returns this Set as a collection.
+func (l *Set) Collection() *Collection {
+	return &Collection{set: l}
 }
 
-// Equals returns true if the argument set is equivalent to this set.
+// Equivalent returns a value that suitable to be used as a map key.
+func (l *Set) Equivalent() Distinct {
+	if l == nil {
+		return emptySet.distinct
+	}
+	return l.distinct
+}
+
+// Equals returns true if the argument set is equal to this set.
 func (l *Set) Equals(o *Set) bool {
-	return l.Equivalent() == o.Equivalent()
+	if l == nil || o == nil {
+		return l == o
+	}
+	return l.distinct == o.distinct && l.data == o.data
 }
 
 // Encoded returns the encoded form of this set, according to encoder.
@@ -184,7 +183,8 @@ func (l *Set) Encoded(encoder Encoder) string {
 
 func empty() Set {
 	return Set{
-		equivalent: emptySet.equivalent,
+		distinct: emptySet.distinct,
+		data:     emptySet.data,
 	}
 }
 
@@ -289,9 +289,7 @@ func NewSetWithSortableFiltered(kvs []KeyValue, tmp *Sortable, filter Filter) (S
 	if filter != nil {
 		return filterSet(kvs[position:], filter)
 	}
-	return Set{
-		equivalent: computeDistinct(kvs[position:]),
-	}, nil
+	return computeSet(kvs[position:]), nil
 }
 
 // filterSet reorders kvs so that included keys are contiguous at the end of
@@ -300,7 +298,7 @@ func filterSet(kvs []KeyValue, filter Filter) (Set, []KeyValue) {
 	var excluded []KeyValue
 
 	// Move attributes that do not match the filter so they're adjacent before
-	// calling computeDistinct().
+	// calling computeSet().
 	distinctPosition := len(kvs)
 
 	// Swap indistinct keys forward and distinct keys toward the
@@ -315,9 +313,7 @@ func filterSet(kvs []KeyValue, filter Filter) (Set, []KeyValue) {
 	}
 	excluded = kvs[:distinctPosition]
 
-	return Set{
-		equivalent: computeDistinct(kvs[distinctPosition:]),
-	}, excluded
+	return computeSet(kvs[distinctPosition:]), excluded
 }
 
 // Filter returns a filtered copy of this Set. See the documentation for
@@ -325,7 +321,8 @@ func filterSet(kvs []KeyValue, filter Filter) (Set, []KeyValue) {
 func (l *Set) Filter(re Filter) (Set, []KeyValue) {
 	if re == nil {
 		return Set{
-			equivalent: l.equivalent,
+			distinct: l.distinct,
+			data:     l.data,
 		}, nil
 	}
 
@@ -334,22 +331,26 @@ func (l *Set) Filter(re Filter) (Set, []KeyValue) {
 	return filterSet(l.ToSlice(), re)
 }
 
-// computeDistinct returns a Distinct using either the fixed- or
+// computeSet returns a Distinct using either the fixed- or
 // reflect-oriented code path, depending on the size of the input. The input
 // slice is assumed to already be sorted and de-duplicated.
-func computeDistinct(kvs []KeyValue) Distinct {
-	iface := computeDistinctFixed(kvs)
-	if iface == nil {
-		iface = computeDistinctReflect(kvs)
-	}
-	return Distinct{
-		iface: iface,
-	}
+func computeSet(kvs []KeyValue) Set {
+	return Set{distinct: NewDistinct(kvs), data: computeData(kvs)}
 }
 
-// computeDistinctFixed computes a Distinct for small slices. It returns nil
-// if the input is too large for this code path.
-func computeDistinctFixed(kvs []KeyValue) interface{} {
+// computeData returns kvs cast to an interface with a concrete type of a fixed
+// size array the exact length of kvs and with the same data.
+func computeData(kvs []KeyValue) interface{} {
+	data := computeDataFixed(kvs)
+	if data == nil {
+		data = computeDataReflect(kvs)
+	}
+	return data
+}
+
+// computeDataFixed returns a fixed size array copy of kvs if the length of kvs
+// <= 10. It returns nil if kvs > 10.
+func computeDataFixed(kvs []KeyValue) interface{} {
 	switch len(kvs) {
 	case 1:
 		ptr := new([1]KeyValue)
@@ -396,9 +397,11 @@ func computeDistinctFixed(kvs []KeyValue) interface{} {
 	}
 }
 
-// computeDistinctReflect computes a Distinct using reflection, works for any
-// size input.
-func computeDistinctReflect(kvs []KeyValue) interface{} {
+// computeDataReflect returns a fixed size array copy of kvs for any size of kvs.
+//
+// This uses reflect to handle the conversion. If the length of kvs is <= 10
+// computeDataFixed should be used instead.
+func computeDataReflect(kvs []KeyValue) interface{} {
 	at := reflect.New(reflect.ArrayOf(len(kvs), keyValueType)).Elem()
 	for i, keyValue := range kvs {
 		*(at.Index(i).Addr().Interface().(*KeyValue)) = keyValue
@@ -408,7 +411,7 @@ func computeDistinctReflect(kvs []KeyValue) interface{} {
 
 // MarshalJSON returns the JSON encoding of the Set.
 func (l *Set) MarshalJSON() ([]byte, error) {
-	return json.Marshal(l.equivalent.iface)
+	return json.Marshal(l.data)
 }
 
 // MarshalLog is the marshaling function used by the logging system to represent this exporter.

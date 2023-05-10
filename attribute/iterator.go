@@ -14,14 +14,16 @@
 
 package attribute // import "go.opentelemetry.io/otel/attribute"
 
-// Iterator allows iterating over the set of attributes in order, sorted by
-// key.
+import "reflect"
+
+// Iterator allows iterating over attributes in order (sorted by key).
 type Iterator struct {
-	storage *Set
+	// []KeyValue or [...]KeyValue
+	storage reflect.Value
 	idx     int
 }
 
-// MergeIterator supports iterating over two sets of attributes while
+// MergeIterator supports iterating over two groups of attributes while
 // eliminating duplicate values from the combined set. The first iterator
 // value takes precedence.
 type MergeIterator struct {
@@ -54,8 +56,13 @@ func (i *Iterator) Label() KeyValue {
 // Attribute returns the current KeyValue of the Iterator. It must be called
 // only after Next returns true.
 func (i *Iterator) Attribute() KeyValue {
-	kv, _ := i.storage.Get(i.idx)
-	return kv
+	if i.idx >= 0 && i.idx < i.storage.Len() {
+		// If the underlying storage type is an array (not a slice), the modern
+		// Go compiler will avoids the interface{} allocation here.
+		return i.storage.Index(i.idx).Interface().(KeyValue)
+	}
+
+	return KeyValue{}
 }
 
 // IndexedLabel returns current index and attribute. Must be called only
