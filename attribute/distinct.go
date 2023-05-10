@@ -34,48 +34,7 @@ type Distinct struct {
 func NewDistinct(kvs []KeyValue) Distinct {
 	h := fnv.New()
 	for _, kv := range kvs {
-		h = h.String(string(kv.Key))
-
-		switch kv.Value.Type() {
-		case BOOL:
-			h = h.Bool(kv.Value.AsBool())
-		case INT64:
-			h = h.Int64(kv.Value.AsInt64())
-		case FLOAT64:
-			h = h.Float64(kv.Value.AsFloat64())
-		case STRING:
-			h = h.String(kv.Value.AsString())
-		case BOOLSLICE:
-			// Avoid allocating a new []bool with AsBoolSlice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Bool(rv.Index(i).Bool())
-			}
-		case INT64SLICE:
-			// Avoid allocating a new []int64 with AsInt64Slice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Int64(rv.Index(i).Int())
-			}
-		case FLOAT64SLICE:
-			// Avoid allocating a new []float64 with AsFloat64Slice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Float64(rv.Index(i).Float())
-			}
-		case STRINGSLICE:
-			// Avoid allocating a new []string with AsStringSlice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.String(rv.Index(i).String())
-			}
-		default:
-			// Logging is an alternative, but using the internal logger here
-			// causes an import cycle so it is not done.
-			v := kv.Value.AsInterface()
-			msg := fmt.Sprintf("unknown value type: %[1]v (%[1]T)", v)
-			panic(msg)
-		}
+		h = hash(h, kv)
 	}
 	return Distinct{value: h}
 }
@@ -84,4 +43,51 @@ func NewDistinct(kvs []KeyValue) Distinct {
 func (d Distinct) Valid() bool {
 	// Given the low probability of collision for FNV-1a, this is a good guess.
 	return d.value != 0
+}
+
+// hash returns the hash of kv with h as the base.
+func hash(h fnv.Hash, kv KeyValue) fnv.Hash {
+	h = h.String(string(kv.Key))
+
+	switch kv.Value.Type() {
+	case BOOL:
+		h = h.Bool(kv.Value.AsBool())
+	case INT64:
+		h = h.Int64(kv.Value.AsInt64())
+	case FLOAT64:
+		h = h.Float64(kv.Value.AsFloat64())
+	case STRING:
+		h = h.String(kv.Value.AsString())
+	case BOOLSLICE:
+		// Avoid allocating a new []bool with AsBoolSlice.
+		rv := reflect.ValueOf(kv.Value.slice)
+		for i := 0; i < rv.Len(); i++ {
+			h = h.Bool(rv.Index(i).Bool())
+		}
+	case INT64SLICE:
+		// Avoid allocating a new []int64 with AsInt64Slice.
+		rv := reflect.ValueOf(kv.Value.slice)
+		for i := 0; i < rv.Len(); i++ {
+			h = h.Int64(rv.Index(i).Int())
+		}
+	case FLOAT64SLICE:
+		// Avoid allocating a new []float64 with AsFloat64Slice.
+		rv := reflect.ValueOf(kv.Value.slice)
+		for i := 0; i < rv.Len(); i++ {
+			h = h.Float64(rv.Index(i).Float())
+		}
+	case STRINGSLICE:
+		// Avoid allocating a new []string with AsStringSlice.
+		rv := reflect.ValueOf(kv.Value.slice)
+		for i := 0; i < rv.Len(); i++ {
+			h = h.String(rv.Index(i).String())
+		}
+	default:
+		// Logging is an alternative, but using the internal logger here
+		// causes an import cycle so it is not done.
+		v := kv.Value.AsInterface()
+		msg := fmt.Sprintf("unknown value type: %[1]v (%[1]T)", v)
+		panic(msg)
+	}
+	return h
 }

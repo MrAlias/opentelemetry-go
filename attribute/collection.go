@@ -1,7 +1,6 @@
 package attribute
 
 import (
-	"fmt"
 	"reflect"
 	"sort"
 
@@ -21,7 +20,7 @@ type Collection struct {
 	// attributes are the ones dropped by filtering.
 	droppedIdx int
 
-	hash Distinct
+	distinct Distinct
 
 	// Ensure users do not use this as a map key.
 	noCmp [0]func()
@@ -41,73 +40,27 @@ func NewCollection(kvs ...KeyValue) *Collection {
 }
 
 func (c *Collection) Distinct() Distinct {
-	if c.hash.Valid() {
+	if c.distinct.Valid() {
 		// Return existing computation of Distinct.
-		return c.hash
+		return c.distinct
 	}
 
 	switch {
 	case c.data.IsValid():
-		c.hash = c.distinct()
-	default:
-		// Default to the empty set Distinct if c.set unset.
-		c.hash = c.set.Equivalent()
-	}
-
-	return c.hash
-}
-
-func (c *Collection) distinct() Distinct {
-	h := fnv.New()
-	for i := 0; i < c.droppedIdx; i++ {
-		// Given the underlying storage is an array, the modern Go compiler is
-		// able to avoid the interface{} allocation here.
-		kv := c.data.Index(i).Interface().(KeyValue)
-
-		h = h.String(string(kv.Key))
-
-		switch kv.Value.Type() {
-		case BOOL:
-			h = h.Bool(kv.Value.AsBool())
-		case INT64:
-			h = h.Int64(kv.Value.AsInt64())
-		case FLOAT64:
-			h = h.Float64(kv.Value.AsFloat64())
-		case STRING:
-			h = h.String(kv.Value.AsString())
-		case BOOLSLICE:
-			// Avoid allocating a new []bool with AsBoolSlice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Bool(rv.Index(i).Bool())
-			}
-		case INT64SLICE:
-			// Avoid allocating a new []int64 with AsInt64Slice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Int64(rv.Index(i).Int())
-			}
-		case FLOAT64SLICE:
-			// Avoid allocating a new []float64 with AsFloat64Slice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.Float64(rv.Index(i).Float())
-			}
-		case STRINGSLICE:
-			// Avoid allocating a new []string with AsStringSlice.
-			rv := reflect.ValueOf(kv.Value.slice)
-			for i := 0; i < rv.Len(); i++ {
-				h = h.String(rv.Index(i).String())
-			}
-		default:
-			// Logging is an alternative, but using the internal logger here
-			// causes an import cycle so it is not done.
-			v := kv.Value.AsInterface()
-			msg := fmt.Sprintf("unknown value type: %[1]v (%[1]T)", v)
-			panic(msg)
+		h := fnv.New()
+		for i := 0; i < c.droppedIdx; i++ {
+			// Given the underlying storage is an array, the modern Go compiler
+			// is able to avoid the interface{} allocation here.
+			kv := c.data.Index(i).Interface().(KeyValue)
+			h = hash(h, kv)
 		}
+		c.distinct = Distinct{value: h}
+	default:
+		// Defaults to the empty set Distinct if c.set unset.
+		c.distinct = c.set.Equivalent()
 	}
-	return Distinct{value: h}
+
+	return c.distinct
 }
 
 // Filter applies the Filter f to the collection in place. If the collection
@@ -119,7 +72,7 @@ func (c *Collection) Filter(f Filter) bool {
 		// c.set cannot be mutated. Make a copy to c.data.
 		c.data = reflect.New(reflect.ArrayOf(c.set.Len(), keyValueType)).Elem()
 		reflect.Copy(c.data, c.set.reflectValue())
-		c.hash = c.set.distinct
+		c.distinct = c.set.distinct
 		c.set = nil
 		fallthrough
 	case c.data.IsValid():
@@ -128,14 +81,14 @@ func (c *Collection) Filter(f Filter) bool {
 
 	if filtered {
 		// Reset c.distinct to invalid so it is recomputed.
-		c.hash = Distinct{}
+		c.distinct = Distinct{}
 	}
 
 	return filtered
 }
 
-// filter applies the Filter f to c.slice. All dropped KeyValues are moved to
-// the end of the slice and c.droppedIdx is updated accordingly.
+// filter applies the Filter f to c.data. All dropped KeyValues are moved to
+// the end of the array and c.droppedIdx is updated accordingly.
 func (c *Collection) filter(f Filter) bool {
 	start := c.droppedIdx
 	for i := 0; i < c.droppedIdx; i++ {
@@ -169,7 +122,7 @@ func (c *Collection) filter(f Filter) bool {
 // Dropped returns the attributes filtered out of the collection.
 func (c *Collection) Dropped() []KeyValue {
 	if !c.data.IsValid() || c.droppedIdx == c.data.Len() {
-		// No filtering of the underlying set or slice has been done.
+		// No filtering of the underlying data has been done.
 		return nil
 	}
 	n := c.data.Len() - c.droppedIdx
@@ -182,7 +135,7 @@ func (c *Collection) Dropped() []KeyValue {
 // is nil.
 func (c *Collection) CopyDropped(dest *[]KeyValue) {
 	if !c.data.IsValid() || c.droppedIdx == c.data.Len() {
-		// No filtering of the underlying set or slice has been done.
+		// No filtering of the underlying data has been done.
 		*dest = (*dest)[:0]
 		return
 	}
