@@ -14,7 +14,11 @@
 
 package metric // import "go.opentelemetry.io/otel/metric"
 
-import "go.opentelemetry.io/otel/attribute"
+import (
+	"fmt"
+
+	"go.opentelemetry.io/otel/attribute"
+)
 
 // Observable is used as a grouping mechanism for all instruments that are
 // updated within a Callback.
@@ -177,20 +181,23 @@ type AddOption interface {
 
 // AddConfig contains options for an addition measurement.
 type AddConfig struct {
-	attrs attribute.Set
+	attrs attribute.Collection
 }
 
 // NewAddConfig returns a new [AddConfig] with all opts applied.
 func NewAddConfig(opts []AddOption) AddConfig {
-	config := AddConfig{attrs: *attribute.EmptySet()}
+	var config AddConfig
 	for _, o := range opts {
 		config = o.applyAdd(config)
+	}
+	if !config.attrs.Distinct().Valid() {
+		config.attrs = *attribute.NewCollection()
 	}
 	return config
 }
 
 // Attributes returns the configured attribute set.
-func (c AddConfig) Attributes() attribute.Set {
+func (c AddConfig) Attributes() attribute.Collection {
 	return c.attrs
 }
 
@@ -202,20 +209,23 @@ type RecordOption interface {
 
 // RecordConfig contains options for a recorded measurement.
 type RecordConfig struct {
-	attrs attribute.Set
+	attrs attribute.Collection
 }
 
 // NewRecordConfig returns a new [RecordConfig] with all opts applied.
 func NewRecordConfig(opts []RecordOption) RecordConfig {
-	config := RecordConfig{attrs: *attribute.EmptySet()}
+	var config RecordConfig
 	for _, o := range opts {
 		config = o.applyRecord(config)
+	}
+	if !config.attrs.Distinct().Valid() {
+		config.attrs = *attribute.NewCollection()
 	}
 	return config
 }
 
 // Attributes returns the configured attribute set.
-func (c RecordConfig) Attributes() attribute.Set {
+func (c RecordConfig) Attributes() attribute.Collection {
 	return c.attrs
 }
 
@@ -227,20 +237,23 @@ type ObserveOption interface {
 
 // ObserveConfig contains options for an observed measurement.
 type ObserveConfig struct {
-	attrs attribute.Set
+	attrs attribute.Collection
 }
 
 // NewObserveConfig returns a new [ObserveConfig] with all opts applied.
 func NewObserveConfig(opts []ObserveOption) ObserveConfig {
-	config := ObserveConfig{attrs: *attribute.EmptySet()}
+	var config ObserveConfig
 	for _, o := range opts {
 		config = o.applyObserve(config)
+	}
+	if !config.attrs.Distinct().Valid() {
+		config.attrs = *attribute.NewCollection()
 	}
 	return config
 }
 
 // Attributes returns the configured attribute set.
-func (c ObserveConfig) Attributes() attribute.Set {
+func (c ObserveConfig) Attributes() attribute.Collection {
 	return c.attrs
 }
 
@@ -252,7 +265,7 @@ type MeasurementOption interface {
 }
 
 type attrOpt struct {
-	set attribute.Set
+	collection attribute.Collection
 }
 
 // mergeSets returns the union of keys between a and b. Any duplicate keys will
@@ -267,35 +280,35 @@ func mergeSets(a, b attribute.Set) attribute.Set {
 	return attribute.NewSet(merged...)
 }
 
-func (o attrOpt) applyAdd(c AddConfig) AddConfig {
+func (o *attrOpt) applyAdd(c AddConfig) AddConfig {
 	switch {
-	case o.set.Len() == 0:
-	case c.attrs.Len() == 0:
-		c.attrs = o.set
+	case o.collection.Len() == 0:
+	case !c.attrs.Distinct().Valid():
+		c.attrs = o.collection
 	default:
-		c.attrs = mergeSets(c.attrs, o.set)
+		c.attrs.Merge(&o.collection)
 	}
 	return c
 }
 
-func (o attrOpt) applyRecord(c RecordConfig) RecordConfig {
+func (o *attrOpt) applyRecord(c RecordConfig) RecordConfig {
 	switch {
-	case o.set.Len() == 0:
-	case c.attrs.Len() == 0:
-		c.attrs = o.set
+	case o.collection.Len() == 0:
+	case !c.attrs.Distinct().Valid():
+		c.attrs = o.collection
 	default:
-		c.attrs = mergeSets(c.attrs, o.set)
+		c.attrs.Merge(&o.collection)
 	}
 	return c
 }
 
-func (o attrOpt) applyObserve(c ObserveConfig) ObserveConfig {
+func (o *attrOpt) applyObserve(c ObserveConfig) ObserveConfig {
 	switch {
-	case o.set.Len() == 0:
-	case c.attrs.Len() == 0:
-		c.attrs = o.set
+	case o.collection.Len() == 0:
+	case !c.attrs.Distinct().Valid():
+		c.attrs = o.collection
 	default:
-		c.attrs = mergeSets(c.attrs, o.set)
+		c.attrs.Merge(&o.collection)
 	}
 	return c
 }
@@ -307,7 +320,7 @@ func (o attrOpt) applyObserve(c ObserveConfig) ObserveConfig {
 // attributes will be merged together in the order they are passed. Attributes
 // with duplicate keys will use the last value passed.
 func WithAttributeSet(attributes attribute.Set) MeasurementOption {
-	return attrOpt{set: attributes}
+	return &attrOpt{collection: *attributes.Collection()}
 }
 
 // WithAttributes converts attributes into an attribute Set and sets the Set to
@@ -326,7 +339,8 @@ func WithAttributeSet(attributes attribute.Set) MeasurementOption {
 // See [WithAttributeSet] for information about how multiple WithAttributes are
 // merged.
 func WithAttributes(attributes ...attribute.KeyValue) MeasurementOption {
-	cp := make([]attribute.KeyValue, len(attributes))
-	copy(cp, attributes)
-	return attrOpt{set: attribute.NewSet(cp...)}
+	c := attribute.NewCollection(attributes...)
+	iter := c.Iter()
+	fmt.Println(attributes, c.Len(), iter.Len())
+	return &attrOpt{collection: *c}
 }

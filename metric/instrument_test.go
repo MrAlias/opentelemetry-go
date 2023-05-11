@@ -19,12 +19,11 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
 	"go.opentelemetry.io/otel/attribute"
 )
 
 type attrConf interface {
-	Attributes() attribute.Set
+	Attributes() attribute.Collection
 }
 
 func TestConfigAttrs(t *testing.T) {
@@ -149,4 +148,24 @@ func TestWithAttributesRace(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+var coll attribute.Collection
+
+func BenchmarkNewAddConfig(b *testing.B) {
+	o := []AddOption{
+		WithAttributeSet(attribute.NewSet(attribute.String("user", "Alice"))),
+		WithAttributes(attribute.Bool("admin", true)),
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		coll = NewAddConfig(o).Attributes()
+	}
+	iter := coll.Iter()
+	b.Log(coll.Len(), iter.Len())
+	for iter.Next() {
+		b.Log(iter.Attribute())
+	}
 }
