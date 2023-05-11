@@ -119,6 +119,8 @@ func makeOne(iter Iterator) oneIterator {
 }
 
 func (oi *oneIterator) advance() {
+	// TODO: each iterator is assumed to be in sorted order, but no longer
+	// unique guarnatee. Update docs.
 	if oi.done = !oi.iter.Next(); !oi.done {
 		oi.attr = oi.iter.Attribute()
 	}

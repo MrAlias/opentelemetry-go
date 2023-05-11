@@ -1,6 +1,7 @@
 package attribute
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 
@@ -36,10 +37,28 @@ func NewCollection(kvs ...KeyValue) *Collection {
 	//  - access to the underlying data via reflect (i.e. using the
 	//    Interface() method) does not allocate
 	data := computeData(kvs)
+	rv := reflect.ValueOf(data)
+	fmt.Println("rv", rv.Len(), rv.IsValid())
 	return &Collection{data: reflect.ValueOf(data), droppedIdx: len(kvs)}
 }
 
+func (c *Collection) Len() int {
+	if c == nil {
+		return 0
+	}
+	// TODO: can this ever have both a c.set and c.data defined?
+	n := c.set.Len()
+	if c.data.IsValid() {
+		n += c.data.Len() - c.droppedIdx
+	}
+	return n
+}
+
 func (c *Collection) Distinct() Distinct {
+	if c == nil {
+		return emptySet.distinct
+	}
+
 	if c.distinct.Valid() {
 		// Return existing computation of Distinct.
 		return c.distinct
@@ -169,7 +188,65 @@ func (c *Collection) Iter() Iterator {
 	})
 
 	return Iterator{
-		storage: reflect.ValueOf(d).Elem(),
+		storage: reflect.ValueOf(d),
 		idx:     -1,
 	}
+}
+
+func (c *Collection) Merge(o *Collection) {
+	// Target merge data composition:
+	//  _______ _______ ________ ________ ________ ________
+	// |       |       |        |        |        |        |
+	// | c.set | o.set | c.data | o.data | c.drop | o.drop |
+	// |_______|_______|________|________|________|________|
+	//                                   ↑
+	//                              droppedIdx
+
+	n := c.Len() + o.Len()
+	newData := reflect.New(reflect.ArrayOf(n, keyValueType)).Elem()
+	var cursor int
+
+	// TODO: if set is not nil, data should be.
+	if c.set != nil && c.set.Len() > 0 {
+		d := newData.Slice(cursor, cursor+c.set.Len())
+		reflect.Copy(d, c.set.reflectValue())
+		c.droppedIdx += c.set.Len()
+		cursor += c.set.Len()
+	}
+
+	if o.set != nil && o.set.Len() > 0 {
+		d := newData.Slice(cursor, cursor+o.set.Len())
+		reflect.Copy(d, o.set.reflectValue())
+		c.droppedIdx += o.set.Len()
+		cursor += o.set.Len()
+	}
+
+	if c.data.IsValid() {
+		d := newData.Slice(cursor, cursor+c.droppedIdx)
+		reflect.Copy(d, c.data.Slice(0, c.droppedIdx))
+		cursor += c.droppedIdx
+	}
+
+	if o.data.IsValid() {
+		d := newData.Slice(cursor, cursor+o.droppedIdx)
+		reflect.Copy(d, o.data.Slice(0, o.droppedIdx))
+		cursor += o.droppedIdx
+	}
+
+	if c.data.IsValid() {
+		n := c.data.Len() - c.droppedIdx
+		d := newData.Slice(cursor, cursor+n)
+		reflect.Copy(d, c.data.Slice(c.droppedIdx, c.data.Len()))
+		cursor += n
+	}
+
+	if o.data.IsValid() {
+		n := o.data.Len() - o.droppedIdx
+		d := newData.Slice(cursor, cursor+n)
+		reflect.Copy(d, o.data.Slice(o.droppedIdx, o.data.Len()))
+	}
+
+	c.droppedIdx += o.droppedIdx
+	c.set = nil
+	c.data = newData
 }
