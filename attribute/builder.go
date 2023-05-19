@@ -16,6 +16,7 @@ package attribute // import "go.opentelemetry.io/otel/attribute"
 
 import (
 	"reflect"
+	"runtime"
 	"sort"
 	"sync"
 )
@@ -49,12 +50,28 @@ var sliceBuilderPool = sync.Pool{
 	New: func() any { return new(sliceBuilder) },
 }
 
+func getSliceBuilder() *sliceBuilder {
+	b := sliceBuilderPool.Get().(*sliceBuilder)
+	runtime.SetFinalizer(b, func(sb *sliceBuilder) {
+		// If the Builder containing the *sliceBuilder becomes unreachable,
+		// return it to the pool instead of garbage collecting.
+		sliceBuilderPool.Put(sb)
+	})
+	return b
+}
+
+func putSliceBuilder(b *sliceBuilder) {
+	// Clear the finalize so it doesn't interfere with the Pool.
+	runtime.SetFinalizer(b, nil)
+	sliceBuilderPool.Put(b)
+}
+
 type sliceBuilder struct {
 	data []KeyValue
 }
 
 func newSliceBuilder(data []KeyValue) *sliceBuilder {
-	b := sliceBuilderPool.Get().(*sliceBuilder)
+	b := getSliceBuilder()
 	b.setLenAndCap(len(data), len(data))
 	copy(b.data, data)
 
@@ -119,13 +136,29 @@ func (b *sliceBuilder) Store(kv KeyValue) builder {
 }
 
 func (b *sliceBuilder) Build() (builder, Set) {
-	defer sliceBuilderPool.Put(b)
+	defer putSliceBuilder(b)
 	ab := newArrayBuilder(b.data)
 	return ab.Build()
 }
 
 var arrayBuilderPool = sync.Pool{
 	New: func() any { return new(arrayBuilder) },
+}
+
+func getArrayBuilder() *arrayBuilder {
+	b := arrayBuilderPool.Get().(*arrayBuilder)
+	runtime.SetFinalizer(b, func(sb *arrayBuilder) {
+		// If the Builder containing the *arrayBuilder becomes unreachable,
+		// return it to the pool instead of garbage collecting.
+		arrayBuilderPool.Put(sb)
+	})
+	return b
+}
+
+func putArrayBuilder(b *arrayBuilder) {
+	// Clear the finalize so it doesn't interfere with the Pool.
+	runtime.SetFinalizer(b, nil)
+	arrayBuilderPool.Put(b)
 }
 
 type arrayBuilder struct {
@@ -137,7 +170,7 @@ type arrayBuilder struct {
 }
 
 func newArrayBuilder(data []KeyValue) *arrayBuilder {
-	b := arrayBuilderPool.Get().(*arrayBuilder)
+	b := getArrayBuilder()
 	/*
 		if b.Len() != len(data) {
 			// Common case.
@@ -160,9 +193,9 @@ func (b *arrayBuilder) Store(kv KeyValue) builder {
 	})
 
 	if idx >= n {
-		defer arrayBuilderPool.Put(b)
+		defer putArrayBuilder(b)
 
-		sb := sliceBuilderPool.Get().(*sliceBuilder)
+		sb := getSliceBuilder()
 		sb.setLenAndCap(n, n+1)
 		reflect.Copy(reflect.ValueOf(sb.data), b.data)
 		sb.data = append(sb.data, kv)
@@ -184,18 +217,18 @@ func (b *arrayBuilder) Store(kv KeyValue) builder {
 
 		// If the above TODO is addressed, this can be removed.
 
-		defer arrayBuilderPool.Put(b)
+		defer putArrayBuilder(b)
 
-		sb := sliceBuilderPool.Get().(*sliceBuilder)
+		sb := getSliceBuilder()
 		sb.setLenAndCap(n, n)
 		reflect.Copy(reflect.ValueOf(sb.data), b.data)
 		sb.data[idx] = kv
 		return sb
 	}
 
-	defer arrayBuilderPool.Put(b)
+	defer putArrayBuilder(b)
 
-	sb := sliceBuilderPool.Get().(*sliceBuilder)
+	sb := getSliceBuilder()
 	sb.setLenAndCap(n, n+1)
 	reflect.Copy(reflect.ValueOf(sb.data), b.data)
 	sb.data = append(sb.data[:idx+1], sb.data[idx:]...)
