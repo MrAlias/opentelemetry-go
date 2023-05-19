@@ -118,21 +118,36 @@ func (b *sliceBuilder) Store(kv KeyValue) builder {
 		return b.data[i].Key >= kv.Key
 	})
 
-	if idx >= b.len() {
-		b.data = append(b.data, kv)
-		return b
+	if exist, ok := b.get(idx); ok && exist.Key == kv.Key {
+		b.replace(idx, kv)
+	} else {
+		b.insert(idx, kv)
 	}
-
-	if b.data[idx].Key == kv.Key {
-		// Overwrite existing key.
-		b.data[idx] = kv
-		return b
-	}
-
-	// Insert new Key.
-	b.data = append(b.data[:idx+1], b.data[idx:]...)
-	b.data[idx] = kv
 	return b
+}
+
+// get returns the KeyValue at index with true if it exists. Otherwise, if
+// index is out of the range of data, it returns an empty key and false.
+func (b *sliceBuilder) get(index int) (KeyValue, bool) {
+	if index < 0 || index >= b.len() {
+		return KeyValue{}, false
+	}
+	return b.data[index], true
+}
+
+// insert inserts kv at index, expanding the data by one.
+func (b *sliceBuilder) insert(index int, kv KeyValue) {
+	if index >= b.len() {
+		b.data = append(b.data, kv)
+		return
+	}
+	b.data = append(b.data[:index+1], b.data[index:]...)
+	b.data[index] = kv
+}
+
+// replace replaces the value at index with kv.
+func (b *sliceBuilder) replace(index int, kv KeyValue) {
+	b.data[index] = kv
 }
 
 func (b *sliceBuilder) Build() (builder, Set) {
@@ -172,7 +187,7 @@ type arrayBuilder struct {
 func newArrayBuilder(data []KeyValue) *arrayBuilder {
 	b := getArrayBuilder()
 	/*
-		if b.Len() != len(data) {
+		if b.len() != len(data) {
 			// Common case.
 			b.data = reflect.New(reflect.ArrayOf(len(data), keyValueType))
 		}
@@ -195,9 +210,7 @@ func (b *arrayBuilder) Store(kv KeyValue) builder {
 	if idx >= n {
 		defer putArrayBuilder(b)
 
-		sb := getSliceBuilder()
-		sb.setLenAndCap(n, n+1)
-		reflect.Copy(reflect.ValueOf(sb.data), b.data)
+		sb := b.toSliceBuilder(n + 1)
 		sb.data = append(sb.data, kv)
 		return sb
 	}
@@ -219,20 +232,25 @@ func (b *arrayBuilder) Store(kv KeyValue) builder {
 
 		defer putArrayBuilder(b)
 
-		sb := getSliceBuilder()
-		sb.setLenAndCap(n, n)
-		reflect.Copy(reflect.ValueOf(sb.data), b.data)
-		sb.data[idx] = kv
+		sb := b.toSliceBuilder(n)
+		sb.replace(idx, kv)
 		return sb
 	}
 
 	defer putArrayBuilder(b)
 
+	sb := b.toSliceBuilder(n + 1)
+	sb.insert(idx, kv)
+	return sb
+}
+
+func (b *arrayBuilder) toSliceBuilder(capacity int) *sliceBuilder {
+	if capacity < b.len() {
+		capacity = b.len()
+	}
 	sb := getSliceBuilder()
-	sb.setLenAndCap(n, n+1)
+	sb.setLenAndCap(b.len(), capacity)
 	reflect.Copy(reflect.ValueOf(sb.data), b.data)
-	sb.data = append(sb.data[:idx+1], sb.data[idx:]...)
-	sb.data[idx] = kv
 	return sb
 }
 
