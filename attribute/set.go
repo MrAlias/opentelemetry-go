@@ -338,18 +338,20 @@ func (l *Set) Filter(re Filter) (Set, []KeyValue) {
 // reflect-oriented code path, depending on the size of the input. The input
 // slice is assumed to already be sorted and de-duplicated.
 func computeDistinct(kvs []KeyValue) Distinct {
-	iface := computeDistinctFixed(kvs)
-	if iface == nil {
-		iface = computeDistinctReflect(kvs)
-	}
-	return Distinct{
-		iface: iface,
-	}
+	return Distinct{iface: computeIface(kvs)}
 }
 
-// computeDistinctFixed computes a Distinct for small slices. It returns nil
+func computeIface(kvs []KeyValue) interface{} {
+	iface := computeIfaceFixed(kvs)
+	if iface == nil {
+		iface = computeIfaceReflect(kvs)
+	}
+	return iface
+}
+
+// computeIfaceFixed computes a Distinct for small slices. It returns nil
 // if the input is too large for this code path.
-func computeDistinctFixed(kvs []KeyValue) interface{} {
+func computeIfaceFixed(kvs []KeyValue) interface{} {
 	switch len(kvs) {
 	case 1:
 		ptr := new([1]KeyValue)
@@ -396,9 +398,9 @@ func computeDistinctFixed(kvs []KeyValue) interface{} {
 	}
 }
 
-// computeDistinctReflect computes a Distinct using reflection, works for any
+// computeIfaceReflect computes a Distinct using reflection, works for any
 // size input.
-func computeDistinctReflect(kvs []KeyValue) interface{} {
+func computeIfaceReflect(kvs []KeyValue) interface{} {
 	at := reflect.New(reflect.ArrayOf(len(kvs), keyValueType)).Elem()
 	for i, keyValue := range kvs {
 		*(at.Index(i).Addr().Interface().(*KeyValue)) = keyValue
