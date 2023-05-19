@@ -29,10 +29,6 @@ func NewBuilder(data []KeyValue) *Builder {
 	return &Builder{builder: newSliceBuilder(data)}
 }
 
-func (b *Builder) Len() int {
-	return b.builder.Len()
-}
-
 func (b *Builder) Store(kv KeyValue) {
 	// TODO: change this to accept ...KeyValue.
 	b.builder = b.builder.Store(kv)
@@ -45,7 +41,6 @@ func (b *Builder) Build() Set {
 }
 
 type builder interface {
-	Len() int
 	Store(KeyValue) builder
 	Build() (builder, Set)
 }
@@ -63,7 +58,7 @@ func newSliceBuilder(data []KeyValue) *sliceBuilder {
 	b.setLenAndCap(len(data), len(data))
 	copy(b.data, data)
 
-	if b.Len() <= 1 {
+	if b.len() <= 1 {
 		return b
 	}
 
@@ -74,8 +69,8 @@ func newSliceBuilder(data []KeyValue) *sliceBuilder {
 	sortables.Put(srt)
 
 	// De-duplicate with last-value-wins.
-	cursor := b.Len() - 1
-	for i := b.Len() - 2; i >= 0; i-- {
+	cursor := b.len() - 1
+	for i := b.len() - 2; i >= 0; i-- {
 		if b.data[i].Key == b.data[cursor].Key {
 			// Ensure the Value is garbage collected.
 			b.data[i] = KeyValue{}
@@ -97,16 +92,16 @@ func (b *sliceBuilder) setLenAndCap(length, capacity int) {
 	b.data = make([]KeyValue, length, capacity)
 }
 
-func (b *sliceBuilder) Len() int {
+func (b *sliceBuilder) len() int {
 	return len(b.data)
 }
 
 func (b *sliceBuilder) Store(kv KeyValue) builder {
-	idx := sort.Search(b.Len(), func(i int) bool {
+	idx := sort.Search(b.len(), func(i int) bool {
 		return b.data[i].Key >= kv.Key
 	})
 
-	if idx >= b.Len() {
+	if idx >= b.len() {
 		b.data = append(b.data, kv)
 		return b
 	}
@@ -154,12 +149,12 @@ func newArrayBuilder(data []KeyValue) *arrayBuilder {
 	return b
 }
 
-func (b *arrayBuilder) Len() int {
+func (b *arrayBuilder) len() int {
 	return b.data.Len()
 }
 
 func (b *arrayBuilder) Store(kv KeyValue) builder {
-	n := b.Len()
+	n := b.len()
 	idx := sort.Search(n, func(i int) bool {
 		return b.data.Index(i).Interface().(KeyValue).Key >= kv.Key
 	})
