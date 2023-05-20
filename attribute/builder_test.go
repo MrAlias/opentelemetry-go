@@ -15,6 +15,7 @@
 package attribute
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -83,4 +84,45 @@ func TestBuilder(t *testing.T) {
 	assert.Equal(t, want2, s2.ToSlice(), "set modified")
 	assert.Equal(t, want1, s1.ToSlice(), "set modified")
 	assert.Equal(t, want0, s0.ToSlice(), "set modified")
+}
+
+func BenchmarkSingleAttrChangeSet(b *testing.B) {
+	b.Run("1", benchmarkSingleAttrChangeSet(1))
+	b.Run("10", benchmarkSingleAttrChangeSet(10))
+	b.Run("100", benchmarkSingleAttrChangeSet(100))
+}
+
+func benchmarkSingleAttrChangeSet(n int) func(*testing.B) {
+	base := make([]KeyValue, n)
+	for i := range base[:n-1] {
+		base[i] = Int("base"+strconv.Itoa(i), i)
+	}
+	base[len(base)-1] = Int("incr", -1)
+	return func(b *testing.B) {
+		b.Run("NewSet", func(b *testing.B) {
+			attr := snapshot(base)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				attr[len(attr)-1] = Int("incr", i)
+				s := NewSet(attr...)
+				if s.Len() != n {
+					b.Errorf("set length not %d: %d", n, s.Len())
+				}
+			}
+		})
+		b.Run("Builder", func(b *testing.B) {
+			attr := snapshot(base)
+			build := NewBuilder(attr)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				build.Store(Int("incr", i))
+				s := build.Build()
+				if s.Len() != n {
+					b.Errorf("set length not %d: %d", n, s.Len())
+				}
+			}
+		})
+	}
 }
