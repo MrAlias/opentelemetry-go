@@ -28,7 +28,7 @@ func snapshot(in []KeyValue) []KeyValue {
 }
 
 func TestBuilder(t *testing.T) {
-	kvs := []KeyValue{
+	b := NewBuilder(
 		Int("a", 0),
 		Int("b", 0),
 		Int("d", 0),
@@ -40,9 +40,7 @@ func TestBuilder(t *testing.T) {
 		Int("d", 1),
 		Int("a", 2),
 		Int("b", 4),
-	}
-
-	b := NewBuilder(kvs)
+	)
 	want := []KeyValue{
 		Int("a", 2),
 		Int("b", 4),
@@ -113,7 +111,7 @@ func benchmarkSingleAttrChangeSet(n int) func(*testing.B) {
 		})
 		b.Run("Builder", func(b *testing.B) {
 			attr := snapshot(base)
-			build := NewBuilder(attr)
+			build := NewBuilder(attr...)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

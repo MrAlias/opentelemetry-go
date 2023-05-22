@@ -401,16 +401,11 @@ func computeIfaceFixed(kvs []KeyValue) interface{} {
 // computeIfaceReflect computes a Distinct using reflection, works for any
 // size input.
 func computeIfaceReflect(kvs []KeyValue) interface{} {
-	t := reflect.ArrayOf(len(kvs), keyValueType)
-	v := reflect.ValueOf(kvs).Convert(t)
-	return v.Interface()
-	/*
-		at := reflect.New(reflect.ArrayOf(len(kvs), keyValueType)).Elem()
-		for i, keyValue := range kvs {
-			*(at.Index(i).Addr().Interface().(*KeyValue)) = keyValue
-		}
-		return at.Interface()
-	*/
+	at := reflect.New(reflect.ArrayOf(len(kvs), keyValueType)).Elem()
+	for i, keyValue := range kvs {
+		*(at.Index(i).Addr().Interface().(*KeyValue)) = keyValue
+	}
+	return at.Interface()
 }
 
 // MarshalJSON returns the JSON encoding of the Set.

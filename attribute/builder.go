@@ -23,7 +23,7 @@ type Builder struct {
 	data []KeyValue
 }
 
-func NewBuilder(kvs []KeyValue) *Builder {
+func NewBuilder(kvs ...KeyValue) *Builder {
 	data := make([]KeyValue, len(kvs))
 	copy(data, kvs)
 
@@ -58,7 +58,6 @@ func (b *Builder) len() int {
 }
 
 func (b *Builder) Store(kv KeyValue) {
-	// TODO: update this to accept ...KeyValue
 	idx := sort.Search(b.len(), func(i int) bool {
 		return b.data[i].Key >= kv.Key
 	})
@@ -81,11 +80,8 @@ func (b *Builder) get(index int) (KeyValue, bool) {
 
 // insert inserts kv at index, expanding the data by one.
 func (b *Builder) insert(index int, kv KeyValue) {
-	if index >= b.len() {
-		b.data = append(b.data, kv)
-		return
-	}
-	b.data = append(b.data[:index+1], b.data[index:]...)
+	b.data = append(b.data, KeyValue{})
+	copy(b.data[index+1:], b.data[index:])
 	b.data[index] = kv
 }
 
