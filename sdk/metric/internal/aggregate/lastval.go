@@ -15,6 +15,7 @@
 package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregate"
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -22,53 +23,61 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// datapoint is timestamped measurement data.
-type datapoint[N int64 | float64] struct {
-	timestamp time.Time
-	value     N
+func newLastValue[N int64 | float64]() *lastValue[N] {
+	return &lastValue[N]{
+		values: make(map[attribute.Distinct]struct {
+			attr      attribute.Set
+			timestamp time.Time
+			value     N
+		}),
+	}
 }
 
 // lastValue summarizes a set of measurements as the last one made.
 type lastValue[N int64 | float64] struct {
 	sync.Mutex
 
-	values map[attribute.Set]datapoint[N]
+	values map[attribute.Distinct]struct {
+		attr      attribute.Set
+		timestamp time.Time
+		value     N
+	}
 }
 
-// NewLastValue returns an Aggregator that summarizes a set of measurements as
-// the last one made.
-func NewLastValue[N int64 | float64]() Aggregator[N] {
-	return &lastValue[N]{values: make(map[attribute.Set]datapoint[N])}
-}
+func (s *lastValue[N]) input(ctx context.Context, value N, attr attribute.Set) {
+	t := now()
+	key := attr.Equivalent()
 
-func (s *lastValue[N]) Aggregate(value N, attr attribute.Set) {
-	d := datapoint[N]{timestamp: now(), value: value}
-	s.Lock()
-	s.values[attr] = d
-	s.Unlock()
-}
-
-func (s *lastValue[N]) Aggregation() metricdata.Aggregation {
 	s.Lock()
 	defer s.Unlock()
 
-	if len(s.values) == 0 {
-		return nil
+	d, ok := s.values[key]
+	if !ok {
+		d.attr = attr
 	}
 
-	gauge := metricdata.Gauge[N]{
-		DataPoints: make([]metricdata.DataPoint[N], 0, len(s.values)),
-	}
+	d.timestamp = t
+	d.value = value
+
+	s.values[key] = d
+}
+
+func (s *lastValue[N]) output(dest *[]metricdata.DataPoint[N]) {
+	s.Lock()
+	defer s.Unlock()
+
+	n := len(s.values)
+	*dest = reset(*dest, n, n)
+
+	var i int
 	for a, v := range s.values {
-		gauge.DataPoints = append(gauge.DataPoints, metricdata.DataPoint[N]{
-			Attributes: a,
-			// The event time is the only meaningful timestamp, StartTime is
-			// ignored.
-			Time:  v.timestamp,
-			Value: v.value,
-		})
+		(*dest)[i].Attributes = v.attr
+		// The event time is the only meaningful timestamp, StartTime is
+		// ignored.
+		(*dest)[i].Time = v.timestamp
+		(*dest)[i].Value = v.value
 		// Do not report stale values.
 		delete(s.values, a)
+		i++
 	}
-	return gauge
 }

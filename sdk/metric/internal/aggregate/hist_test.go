@@ -15,6 +15,7 @@
 package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregate"
 
 import (
+	"context"
 	"sort"
 	"testing"
 
@@ -50,9 +51,15 @@ func testHistogram[N int64 | float64](t *testing.T) {
 
 	incr := monoIncr[N]()
 	eFunc := deltaHistExpecter[N](incr)
-	t.Run("Delta", tester.Run(NewDeltaHistogram[N](histConf), incr, eFunc))
+	var agg metricdata.Aggregation = metricdata.Histogram[N]{}
+	b := Builder[N]{Temporality: metricdata.DeltaTemporality}
+	in, out := b.ExplicitBucketHistogram(histConf)
+	t.Run("Delta", tester.Run(in, out, incr, eFunc, &agg))
+
+	b.Temporality = metricdata.CumulativeTemporality
+	in, out = b.ExplicitBucketHistogram(histConf)
 	eFunc = cumuHistExpecter[N](incr)
-	t.Run("Cumulative", tester.Run(NewCumulativeHistogram[N](histConf), incr, eFunc))
+	t.Run("Cumulative", tester.Run(in, out, incr, eFunc, &agg))
 }
 
 func deltaHistExpecter[N int64 | float64](incr setMap[N]) expectFunc {
@@ -122,83 +129,93 @@ func testBucketsBin[N int64 | float64]() func(t *testing.T) {
 	}
 }
 
-func testHistImmutableBounds[N int64 | float64](newA func(aggregation.ExplicitBucketHistogram) Aggregator[N], getBounds func(Aggregator[N]) []float64) func(t *testing.T) {
+func testHistImmutableBounds[N int64 | float64](out func(*hist[N]) []metricdata.HistogramDataPoint[N]) func(t *testing.T) {
 	b := []float64{0, 1, 2}
 	cpB := make([]float64, len(b))
 	copy(cpB, b)
 
-	a := newA(aggregation.ExplicitBucketHistogram{Boundaries: b})
+	h := newHistogram[N](aggregation.ExplicitBucketHistogram{Boundaries: b})
 	return func(t *testing.T) {
-		require.Equal(t, cpB, getBounds(a))
+		require.Equal(t, cpB, h.bounds)
 
 		b[0] = 10
-		assert.Equal(t, cpB, getBounds(a), "modifying the bounds argument should not change the bounds")
+		assert.Equal(t, cpB, h.bounds, "modifying the bounds argument should not change the bounds")
 
-		a.Aggregate(5, alice)
-		hdp := a.Aggregation().(metricdata.Histogram[N]).DataPoints[0]
+		h.input(context.Background(), 5, alice)
+		hdp := out(h)[0]
+		require.Len(t, hdp.Bounds, len(b))
 		hdp.Bounds[1] = 10
-		assert.Equal(t, cpB, getBounds(a), "modifying the Aggregation bounds should not change the bounds")
+		assert.Equal(t, cpB, h.bounds, "modifying the Aggregation bounds should not change the bounds")
 	}
 }
 
 func TestHistogramImmutableBounds(t *testing.T) {
-	t.Run("Delta", testHistImmutableBounds(
-		NewDeltaHistogram[int64],
-		func(a Aggregator[int64]) []float64 {
-			deltaH := a.(*deltaHistogram[int64])
-			return deltaH.bounds
+	t.Run("Delta/Int64", testHistImmutableBounds[int64](
+		func(h *hist[int64]) []metricdata.HistogramDataPoint[int64] {
+			var out []metricdata.HistogramDataPoint[int64]
+			h.delta(&out)
+			return out
+		},
+	))
+	t.Run("Delta/Float64", testHistImmutableBounds[float64](
+		func(h *hist[float64]) []metricdata.HistogramDataPoint[float64] {
+			var out []metricdata.HistogramDataPoint[float64]
+			h.delta(&out)
+			return out
 		},
 	))
 
-	t.Run("Cumulative", testHistImmutableBounds(
-		NewCumulativeHistogram[int64],
-		func(a Aggregator[int64]) []float64 {
-			cumuH := a.(*cumulativeHistogram[int64])
-			return cumuH.bounds
+	t.Run("Cumulative/Int64", testHistImmutableBounds(
+		func(h *hist[int64]) []metricdata.HistogramDataPoint[int64] {
+			var out []metricdata.HistogramDataPoint[int64]
+			h.cumulative(&out)
+			return out
+		},
+	))
+	t.Run("Cumulative/Float64", testHistImmutableBounds(
+		func(h *hist[float64]) []metricdata.HistogramDataPoint[float64] {
+			var out []metricdata.HistogramDataPoint[float64]
+			h.cumulative(&out)
+			return out
 		},
 	))
 }
 
 func TestCumulativeHistogramImutableCounts(t *testing.T) {
-	a := NewCumulativeHistogram[int64](histConf)
-	a.Aggregate(5, alice)
-	hdp := a.Aggregation().(metricdata.Histogram[int64]).DataPoints[0]
+	a := newHistogram[int64](histConf)
+	a.input(context.Background(), 5, alice)
 
-	cumuH := a.(*cumulativeHistogram[int64])
-	require.Equal(t, hdp.BucketCounts, cumuH.values[alice].counts)
+	var out []metricdata.HistogramDataPoint[int64]
+	a.cumulative(&out)
+	hdp := out[0]
+	require.Equal(t, hdp.BucketCounts, a.values[alice.Equivalent()].counts)
 
 	cpCounts := make([]uint64, len(hdp.BucketCounts))
 	copy(cpCounts, hdp.BucketCounts)
 	hdp.BucketCounts[0] = 10
-	assert.Equal(t, cpCounts, cumuH.values[alice].counts, "modifying the Aggregator bucket counts should not change the Aggregator")
+	assert.Equal(t, cpCounts, a.values[alice.Equivalent()].counts, "modifying the Aggregator bucket counts should not change the Aggregator")
 }
 
 func TestDeltaHistogramReset(t *testing.T) {
 	t.Cleanup(mockTime(now))
 
-	a := NewDeltaHistogram[int64](histConf)
-	assert.Nil(t, a.Aggregation())
+	a := newHistogram[int64](histConf)
+	var out []metricdata.HistogramDataPoint[int64]
+	a.delta(&out)
+	assert.Len(t, out, 0)
 
-	a.Aggregate(1, alice)
-	expect := metricdata.Histogram[int64]{Temporality: metricdata.DeltaTemporality}
-	expect.DataPoints = []metricdata.HistogramDataPoint[int64]{hPoint[int64](alice, 1, 1)}
-	metricdatatest.AssertAggregationsEqual(t, expect, a.Aggregation())
+	a.input(context.Background(), 1, alice)
+	a.delta(&out)
+	metricdatatest.AssertEqual(t, hPoint[int64](alice, 1, 1), out[0])
 
 	// The attr set should be forgotten once Aggregations is called.
-	expect.DataPoints = nil
-	assert.Nil(t, a.Aggregation())
+	a.delta(&out)
+	assert.Len(t, out, 0)
 
 	// Aggregating another set should not affect the original (alice).
-	a.Aggregate(1, bob)
-	expect.DataPoints = []metricdata.HistogramDataPoint[int64]{hPoint[int64](bob, 1, 1)}
-	metricdatatest.AssertAggregationsEqual(t, expect, a.Aggregation())
-}
-
-func TestEmptyHistogramNilAggregation(t *testing.T) {
-	assert.Nil(t, NewCumulativeHistogram[int64](histConf).Aggregation())
-	assert.Nil(t, NewCumulativeHistogram[float64](histConf).Aggregation())
-	assert.Nil(t, NewDeltaHistogram[int64](histConf).Aggregation())
-	assert.Nil(t, NewDeltaHistogram[float64](histConf).Aggregation())
+	a.input(context.Background(), 1, bob)
+	a.delta(&out)
+	metricdatatest.AssertEqual(t, hPoint[int64](bob, 1, 1), out[0])
 }
 
 func BenchmarkHistogram(b *testing.B) {
@@ -207,8 +224,9 @@ func BenchmarkHistogram(b *testing.B) {
 }
 
 func benchmarkHistogram[N int64 | float64](b *testing.B) {
-	factory := func() Aggregator[N] { return NewDeltaHistogram[N](histConf) }
+	build := Builder[N]{Temporality: metricdata.DeltaTemporality}
+	factory := func() (Input[N], Output) { return build.ExplicitBucketHistogram(histConf) }
 	b.Run("Delta", benchmarkAggregator(factory))
-	factory = func() Aggregator[N] { return NewCumulativeHistogram[N](histConf) }
+	build.Temporality = metricdata.CumulativeTemporality
 	b.Run("Cumulative", benchmarkAggregator(factory))
 }

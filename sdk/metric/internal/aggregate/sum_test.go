@@ -15,10 +15,10 @@
 package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregate"
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -38,44 +38,57 @@ func testSum[N int64 | float64](t *testing.T) {
 		CycleN:       defaultCycles,
 	}
 
+	var agg metricdata.Aggregation = metricdata.Sum[N]{}
 	t.Run("Delta", func(t *testing.T) {
+		b := Builder[N]{Temporality: metricdata.DeltaTemporality}
 		incr, mono := monoIncr[N](), true
+		in, out := b.Sum(mono)
 		eFunc := deltaExpecter[N](incr, mono)
-		t.Run("Monotonic", tester.Run(NewDeltaSum[N](mono), incr, eFunc))
+		t.Run("Monotonic", tester.Run(in, out, incr, eFunc, &agg))
 
 		incr, mono = nonMonoIncr[N](), false
+		in, out = b.Sum(mono)
 		eFunc = deltaExpecter[N](incr, mono)
-		t.Run("NonMonotonic", tester.Run(NewDeltaSum[N](mono), incr, eFunc))
+		t.Run("NonMonotonic", tester.Run(in, out, incr, eFunc, &agg))
 	})
 
 	t.Run("Cumulative", func(t *testing.T) {
+		b := Builder[N]{Temporality: metricdata.CumulativeTemporality}
 		incr, mono := monoIncr[N](), true
+		in, out := b.Sum(mono)
 		eFunc := cumuExpecter[N](incr, mono)
-		t.Run("Monotonic", tester.Run(NewCumulativeSum[N](mono), incr, eFunc))
+		t.Run("Monotonic", tester.Run(in, out, incr, eFunc, &agg))
 
 		incr, mono = nonMonoIncr[N](), false
+		in, out = b.Sum(mono)
 		eFunc = cumuExpecter[N](incr, mono)
-		t.Run("NonMonotonic", tester.Run(NewCumulativeSum[N](mono), incr, eFunc))
+		t.Run("NonMonotonic", tester.Run(in, out, incr, eFunc, &agg))
 	})
 
 	t.Run("PreComputedDelta", func(t *testing.T) {
+		b := Builder[N]{Temporality: metricdata.DeltaTemporality}
 		incr, mono := monoIncr[N](), true
+		in, out := b.PrecomputedSum(mono)
 		eFunc := preDeltaExpecter[N](incr, mono)
-		t.Run("Monotonic", tester.Run(NewPrecomputedDeltaSum[N](mono), incr, eFunc))
+		t.Run("Monotonic", tester.Run(in, out, incr, eFunc, &agg))
 
 		incr, mono = nonMonoIncr[N](), false
+		in, out = b.PrecomputedSum(mono)
 		eFunc = preDeltaExpecter[N](incr, mono)
-		t.Run("NonMonotonic", tester.Run(NewPrecomputedDeltaSum[N](mono), incr, eFunc))
+		t.Run("NonMonotonic", tester.Run(in, out, incr, eFunc, &agg))
 	})
 
 	t.Run("PreComputedCumulative", func(t *testing.T) {
+		b := Builder[N]{Temporality: metricdata.CumulativeTemporality}
 		incr, mono := monoIncr[N](), true
+		in, out := b.PrecomputedSum(mono)
 		eFunc := preCumuExpecter[N](incr, mono)
-		t.Run("Monotonic", tester.Run(NewPrecomputedCumulativeSum[N](mono), incr, eFunc))
+		t.Run("Monotonic", tester.Run(in, out, incr, eFunc, &agg))
 
 		incr, mono = nonMonoIncr[N](), false
+		in, out = b.PrecomputedSum(mono)
 		eFunc = preCumuExpecter[N](incr, mono)
-		t.Run("NonMonotonic", tester.Run(NewPrecomputedCumulativeSum[N](mono), incr, eFunc))
+		t.Run("NonMonotonic", tester.Run(in, out, incr, eFunc, &agg))
 	})
 }
 
@@ -141,22 +154,30 @@ func point[N int64 | float64](a attribute.Set, v N) metricdata.DataPoint[N] {
 func testDeltaSumReset[N int64 | float64](t *testing.T) {
 	t.Cleanup(mockTime(now))
 
-	a := NewDeltaSum[N](false)
-	assert.Nil(t, a.Aggregation())
+	a := newSum[N]()
+	var data []metricdata.DataPoint[N]
+	a.delta(&data)
+	assert.Len(t, data, 0)
 
-	a.Aggregate(1, alice)
-	expect := metricdata.Sum[N]{Temporality: metricdata.DeltaTemporality}
-	expect.DataPoints = []metricdata.DataPoint[N]{point[N](alice, 1)}
-	metricdatatest.AssertAggregationsEqual(t, expect, a.Aggregation())
+	a.input(context.Background(), 1, alice)
+	expect := metricdata.Sum[N]{
+		DataPoints: []metricdata.DataPoint[N]{point[N](alice, 1)},
+	}
+	a.delta(&data)
+	got := metricdata.Sum[N]{DataPoints: data}
+	metricdatatest.AssertAggregationsEqual(t, expect, got)
 
 	// The attr set should be forgotten once Aggregations is called.
 	expect.DataPoints = nil
-	assert.Nil(t, a.Aggregation())
+	a.delta(&data)
+	assert.Len(t, data, 0)
 
 	// Aggregating another set should not affect the original (alice).
-	a.Aggregate(1, bob)
+	a.input(context.Background(), 1, bob)
 	expect.DataPoints = []metricdata.DataPoint[N]{point[N](bob, 1)}
-	metricdatatest.AssertAggregationsEqual(t, expect, a.Aggregation())
+	a.delta(&data)
+	got = metricdata.Sum[N]{DataPoints: data}
+	metricdatatest.AssertAggregationsEqual(t, expect, got)
 }
 
 func TestDeltaSumReset(t *testing.T) {
@@ -165,150 +186,45 @@ func TestDeltaSumReset(t *testing.T) {
 }
 
 func TestPreComputedDeltaSum(t *testing.T) {
-	var mono bool
-	agg := NewPrecomputedDeltaSum[int64](mono)
-	require.Implements(t, (*precomputeAggregator[int64])(nil), agg)
+	agg := newPrecomputedSum[int64]()
 
 	attrs := attribute.NewSet(attribute.String("key", "val"))
-	agg.Aggregate(1, attrs)
-	got := agg.Aggregation()
-	want := metricdata.Sum[int64]{
-		IsMonotonic: mono,
-		Temporality: metricdata.DeltaTemporality,
-		DataPoints:  []metricdata.DataPoint[int64]{point[int64](attrs, 1)},
-	}
+	agg.input(context.Background(), 1, attrs)
+	var got []metricdata.DataPoint[int64]
+	agg.delta(&got)
 	opt := metricdatatest.IgnoreTimestamp()
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 1), got[0], opt)
 
-	// Delta values should zero.
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 0)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	agg.(precomputeAggregator[int64]).aggregateFiltered(1, attrs)
-	got = agg.Aggregation()
-	// measured(+): 1, previous(-): 1, filtered(+): 1
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 1)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Filtered values should not persist.
-	got = agg.Aggregation()
-	// measured(+): 1, previous(-): 2, filtered(+): 0
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, -1)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-	got = agg.Aggregation()
-	// measured(+): 1, previous(-): 1, filtered(+): 0
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 0)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
+	// Values should persist.
+	agg.delta(&got)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 0), got[0], opt)
 
 	// Override set value.
-	agg.Aggregate(2, attrs)
-	agg.Aggregate(5, attrs)
-	// Filtered should add.
-	agg.(precomputeAggregator[int64]).aggregateFiltered(3, attrs)
-	agg.(precomputeAggregator[int64]).aggregateFiltered(10, attrs)
-	got = agg.Aggregation()
-	// measured(+): 5, previous(-): 1, filtered(+): 13
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 17)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Filtered values should not persist.
-	agg.Aggregate(5, attrs)
-	got = agg.Aggregation()
-	// measured(+): 5, previous(-): 18, filtered(+): 0
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, -13)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Order should not affect measure.
-	// Filtered should add.
-	agg.(precomputeAggregator[int64]).aggregateFiltered(3, attrs)
-	agg.Aggregate(7, attrs)
-	agg.(precomputeAggregator[int64]).aggregateFiltered(10, attrs)
-	got = agg.Aggregation()
-	// measured(+): 7, previous(-): 5, filtered(+): 13
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 15)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-	agg.Aggregate(7, attrs)
-	got = agg.Aggregation()
-	// measured(+): 7, previous(-): 20, filtered(+): 0
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, -13)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
+	agg.input(context.Background(), 5, attrs)
+	agg.input(context.Background(), 10, attrs)
+	agg.delta(&got)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 9), got[0], opt)
 }
 
 func TestPreComputedCumulativeSum(t *testing.T) {
-	var mono bool
-	agg := NewPrecomputedCumulativeSum[int64](mono)
-	require.Implements(t, (*precomputeAggregator[int64])(nil), agg)
+	agg := newPrecomputedSum[int64]()
 
 	attrs := attribute.NewSet(attribute.String("key", "val"))
-	agg.Aggregate(1, attrs)
-	got := agg.Aggregation()
-	want := metricdata.Sum[int64]{
-		IsMonotonic: mono,
-		Temporality: metricdata.CumulativeTemporality,
-		DataPoints:  []metricdata.DataPoint[int64]{point[int64](attrs, 1)},
-	}
+	agg.input(context.Background(), 1, attrs)
+	var got []metricdata.DataPoint[int64]
+	agg.cumulative(&got)
 	opt := metricdatatest.IgnoreTimestamp()
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 1), got[0], opt)
 
 	// Cumulative values should persist.
-	got = agg.Aggregation()
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	agg.(precomputeAggregator[int64]).aggregateFiltered(1, attrs)
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 2)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Filtered values should not persist.
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 1)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
+	agg.cumulative(&got)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 1), got[0], opt)
 
 	// Override set value.
-	agg.Aggregate(5, attrs)
-	// Filtered should add.
-	agg.(precomputeAggregator[int64]).aggregateFiltered(3, attrs)
-	agg.(precomputeAggregator[int64]).aggregateFiltered(10, attrs)
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 18)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Filtered values should not persist.
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 5)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-
-	// Order should not affect measure.
-	// Filtered should add.
-	agg.(precomputeAggregator[int64]).aggregateFiltered(3, attrs)
-	agg.Aggregate(7, attrs)
-	agg.(precomputeAggregator[int64]).aggregateFiltered(10, attrs)
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 20)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-	got = agg.Aggregation()
-	want.DataPoints = []metricdata.DataPoint[int64]{point[int64](attrs, 7)}
-	metricdatatest.AssertAggregationsEqual(t, want, got, opt)
-}
-
-func TestEmptySumNilAggregation(t *testing.T) {
-	assert.Nil(t, NewCumulativeSum[int64](true).Aggregation())
-	assert.Nil(t, NewCumulativeSum[int64](false).Aggregation())
-	assert.Nil(t, NewCumulativeSum[float64](true).Aggregation())
-	assert.Nil(t, NewCumulativeSum[float64](false).Aggregation())
-	assert.Nil(t, NewDeltaSum[int64](true).Aggregation())
-	assert.Nil(t, NewDeltaSum[int64](false).Aggregation())
-	assert.Nil(t, NewDeltaSum[float64](true).Aggregation())
-	assert.Nil(t, NewDeltaSum[float64](false).Aggregation())
-	assert.Nil(t, NewPrecomputedCumulativeSum[int64](true).Aggregation())
-	assert.Nil(t, NewPrecomputedCumulativeSum[int64](false).Aggregation())
-	assert.Nil(t, NewPrecomputedCumulativeSum[float64](true).Aggregation())
-	assert.Nil(t, NewPrecomputedCumulativeSum[float64](false).Aggregation())
-	assert.Nil(t, NewPrecomputedDeltaSum[int64](true).Aggregation())
-	assert.Nil(t, NewPrecomputedDeltaSum[int64](false).Aggregation())
-	assert.Nil(t, NewPrecomputedDeltaSum[float64](true).Aggregation())
-	assert.Nil(t, NewPrecomputedDeltaSum[float64](false).Aggregation())
+	agg.input(context.Background(), 5, attrs)
+	agg.input(context.Background(), 10, attrs)
+	agg.cumulative(&got)
+	metricdatatest.AssertEqual(t, point[int64](attrs, 10), got[0], opt)
 }
 
 func BenchmarkSum(b *testing.B) {
@@ -320,8 +236,15 @@ func benchmarkSum[N int64 | float64](b *testing.B) {
 	// The monotonic argument is only used to annotate the Sum returned from
 	// the Aggregation method. It should not have an effect on operational
 	// performance, therefore, only monotonic=false is benchmarked here.
-	factory := func() Aggregator[N] { return NewDeltaSum[N](false) }
+	factory := func() (Input[N], Output) {
+		b := Builder[N]{Temporality: metricdata.DeltaTemporality}
+		return b.Sum(false)
+	}
 	b.Run("Delta", benchmarkAggregator(factory))
-	factory = func() Aggregator[N] { return NewCumulativeSum[N](false) }
+
+	factory = func() (Input[N], Output) {
+		b := Builder[N]{Temporality: metricdata.CumulativeTemporality}
+		return b.Sum(false)
+	}
 	b.Run("Cumulative", benchmarkAggregator(factory))
 }

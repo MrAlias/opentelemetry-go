@@ -15,13 +15,13 @@
 package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggregate"
 
 import (
+	"context"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata/metricdatatest"
@@ -84,78 +84,110 @@ type aggregatorTester[N int64 | float64] struct {
 	CycleN int
 }
 
-func (at *aggregatorTester[N]) Run(a Aggregator[N], incr setMap[N], eFunc expectFunc) func(*testing.T) {
+func (at *aggregatorTester[N]) Run(in Input[N], out Output, incr setMap[N], eFunc expectFunc, agg *metricdata.Aggregation) func(*testing.T) {
 	m := at.MeasurementN * at.GoroutineN
 	return func(t *testing.T) {
-		t.Run("Comparable", func(t *testing.T) {
-			assert.NotPanics(t, func() {
-				_ = map[Aggregator[N]]struct{}{a: {}}
-			})
-		})
-
-		t.Run("Correctness", func(t *testing.T) {
-			for i := 0; i < at.CycleN; i++ {
-				var wg sync.WaitGroup
-				wg.Add(at.GoroutineN)
-				for j := 0; j < at.GoroutineN; j++ {
-					go func() {
-						defer wg.Done()
-						for k := 0; k < at.MeasurementN; k++ {
-							for attrs, n := range incr {
-								a.Aggregate(N(n), attrs)
-							}
+		for i := 0; i < at.CycleN; i++ {
+			var wg sync.WaitGroup
+			wg.Add(at.GoroutineN)
+			for j := 0; j < at.GoroutineN; j++ {
+				go func() {
+					defer wg.Done()
+					for k := 0; k < at.MeasurementN; k++ {
+						for attrs, n := range incr {
+							in(context.Background(), N(n), attrs)
 						}
-					}()
-				}
-				wg.Wait()
-
-				metricdatatest.AssertAggregationsEqual(t, eFunc(m), a.Aggregation())
+					}
+				}()
 			}
-		})
+			wg.Wait()
+
+			out(agg)
+			metricdatatest.AssertAggregationsEqual(t, eFunc(m), *agg)
+		}
+	}
+}
+
+func TestNoInputReturnsZeroOutput(t *testing.T) {
+	t.Run("Int64", testNoInputReturnsZeroOutput[int64]())
+	t.Run("Float64", testNoInputReturnsZeroOutput[float64]())
+}
+
+func testNoInputReturnsZeroOutput[N int64 | float64]() func(t *testing.T) {
+	run := func(_ Input[N], out Output) func(t *testing.T) {
+		return func(t *testing.T) {
+			t.Helper()
+			var data metricdata.Aggregation
+			assert.Equal(t, 0, out(&data), "wrong amount of data output")
+		}
+	}
+
+	return func(t *testing.T) {
+		b := Builder[N]{Temporality: metricdata.DeltaTemporality}
+		t.Run("Delta/LastValue", run(b.LastValue()))
+
+		t.Run("Delta/Monotonic/Sum", run(b.Sum(true)))
+		t.Run("Delta/NonMonotonic/Sum", run(b.Sum(false)))
+		b.Temporality = metricdata.CumulativeTemporality
+		t.Run("Cumulative/Monotonic/Sum", run(b.Sum(true)))
+		t.Run("Cumulative/NonMonotonic/Sum", run(b.Sum(false)))
+
+		t.Run("Delta/Monotonic/PrecomputedSum", run(b.PrecomputedSum(true)))
+		t.Run("Delta/NonMonotonic/PrecomputedSum", run(b.PrecomputedSum(false)))
+		b.Temporality = metricdata.CumulativeTemporality
+		t.Run("Cumulative/Monotonic/PrecomputedSum", run(b.PrecomputedSum(true)))
+		t.Run("Cumulative/NonMonotonic/PrecomputedSum", run(b.PrecomputedSum(false)))
+
+		b.Temporality = metricdata.DeltaTemporality
+		t.Run("Delta/Histogram", run(b.ExplicitBucketHistogram(histConf)))
+		b.Temporality = metricdata.CumulativeTemporality
+		t.Run("Delta/Histogram", run(b.ExplicitBucketHistogram(histConf)))
 	}
 }
 
 var bmarkResults metricdata.Aggregation
 
-func benchmarkAggregatorN[N int64 | float64](b *testing.B, factory func() Aggregator[N], count int) {
+func benchmarkAggregatorN[N int64 | float64](b *testing.B, factory func() (Input[N], Output), count int) {
 	attrs := make([]attribute.Set, count)
 	for i := range attrs {
 		attrs[i] = attribute.NewSet(attribute.Int("value", i))
 	}
 
-	b.Run("Aggregate", func(b *testing.B) {
-		agg := factory()
+	b.Run("Input", func(b *testing.B) {
+		in, out := factory()
+		ctx := context.Background()
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
 			for _, attr := range attrs {
-				agg.Aggregate(1, attr)
+				in(ctx, 1, attr)
 			}
 		}
-		bmarkResults = agg.Aggregation()
+		out(&bmarkResults)
 	})
 
-	b.Run("Aggregations", func(b *testing.B) {
-		aggs := make([]Aggregator[N], b.N)
-		for n := range aggs {
-			a := factory()
+	b.Run("Output", func(b *testing.B) {
+		outs := make([]Output, b.N)
+		for n := range outs {
+			ctx := context.Background()
+			in, out := factory()
 			for _, attr := range attrs {
-				a.Aggregate(1, attr)
+				in(ctx, 1, attr)
 			}
-			aggs[n] = a
+			outs[n] = out
 		}
 
 		b.ReportAllocs()
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
-			bmarkResults = aggs[n].Aggregation()
+			outs[n](&bmarkResults)
 		}
 	})
 }
 
-func benchmarkAggregator[N int64 | float64](factory func() Aggregator[N]) func(*testing.B) {
+func benchmarkAggregator[N int64 | float64](factory func() (Input[N], Output)) func(*testing.B) {
 	counts := []int{1, 10, 100}
 	return func(b *testing.B) {
 		for _, n := range counts {
