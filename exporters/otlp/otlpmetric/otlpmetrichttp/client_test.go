@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	ominternal "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/internal"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/internal/oconf"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/internal/otest"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp/internal/oconf"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp/internal/otest"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"

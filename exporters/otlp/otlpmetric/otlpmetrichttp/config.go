@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/internal/retry"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/internal/oconf"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp/internal/oconf"
 	"go.opentelemetry.io/otel/sdk/metric"
 )
 

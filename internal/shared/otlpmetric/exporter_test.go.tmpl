@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package otlpmetrichttp // import "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
+package internal // import "go.opentelemetry.io/otel/exporters/otlp/otlpmetric/internal"
 
 import (
 	"context"
@@ -20,29 +20,48 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp/internal/oconf"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp/internal/otest"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	mpb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
+
+type client struct {
+	// n is incremented by all Client methods. If these methods are called
+	// concurrently this should fail tests run with the race detector.
+	n int
+}
+
+func (c *client) Temporality(k metric.InstrumentKind) metricdata.Temporality {
+	return metric.DefaultTemporalitySelector(k)
+}
+
+func (c *client) Aggregation(k metric.InstrumentKind) aggregation.Aggregation {
+	return metric.DefaultAggregationSelector(k)
+}
+
+func (c *client) UploadMetrics(context.Context, *mpb.ResourceMetrics) error {
+	c.n++
+	return nil
+}
+
+func (c *client) ForceFlush(context.Context) error {
+	c.n++
+	return nil
+}
+
+func (c *client) Shutdown(context.Context) error {
+	c.n++
+	return nil
+}
 
 func TestExporterClientConcurrentSafe(t *testing.T) {
 	const goroutines = 5
 
-	coll, err := otest.NewHTTPCollector("", nil)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	addr := coll.Addr().String()
-	opts := []Option{WithEndpoint(addr), WithInsecure()}
-	cfg := oconf.NewHTTPConfig(asHTTPOptions(opts)...)
-	client, err := newClient(cfg)
-	require.NoError(t, err)
-
-	exp, err := newExporter(client, oconf.Config{})
-	require.NoError(t, err)
+	exp := New(&client{})
 	rm := new(metricdata.ResourceMetrics)
+	ctx := context.Background()
 
 	done := make(chan struct{})
 	first := make(chan struct{}, goroutines)
