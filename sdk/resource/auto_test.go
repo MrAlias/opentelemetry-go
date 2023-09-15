@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 )
@@ -73,6 +74,101 @@ func TestDetect(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, r)
 			assert.Equal(t, c.want, r.SchemaURL())
+		})
+	}
+}
+
+func TestMerge2(t *testing.T) {
+	cases := []struct {
+		name       string
+		res1, res2 *resource.Resource
+		want       *resource.Resource
+	}{
+		{
+			name: "No upgrade",
+			res1: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.18.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("browser.user_agent", "go_test"), //This should not be upgraded to 1.19.0's "user_agent.original"
+			),
+			res2: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.15.0",
+				attribute.String("res2", "1.15.0"),
+			),
+			want: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.18.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("browser.user_agent", "go_test"),
+				attribute.String("res2", "1.15.0"),
+			),
+		},
+		{
+			name: "With upgrade",
+			res1: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.18.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("browser.user_agent", "go_test"),
+			),
+			res2: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.19.0",
+				attribute.String("res2", "1.19.0"),
+			),
+			want: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.19.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("user_agent.original", "go_test"),
+				attribute.String("res2", "1.19.0"),
+			),
+		},
+		{
+			name: "Transient upgrade",
+			res1: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.18.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("browser.user_agent", "go_test"),
+			),
+			res2: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.20.0",
+				attribute.String("res2", "1.20.0"),
+			),
+			want: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.20.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("user_agent.original", "go_test"),
+				attribute.String("res2", "1.20.0"),
+			),
+		},
+		{
+			name: "Doesn't upgrade outside of resources",
+			res1: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.18.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("faas.execution", "af47"), // This is a span attribute it shouldn't be modified by Merge
+			),
+			res2: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.20.0",
+				attribute.String("res2", "1.20.0"),
+			),
+			want: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.20.0",
+				attribute.String("res1", "1.18.0"),
+				attribute.String("faas.execution", "af47"),
+				attribute.String("res2", "1.20.0"),
+			),
+		},
+		{
+			name: "Doesn't upgrade previous version transitions",
+			res1: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.20.0",
+				attribute.String("res1", "1.20.0"),
+				attribute.String("browser.user_agent", "go_test"),
+			),
+			res2: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.21.0",
+				attribute.String("res2", "1.21.0"),
+			),
+			want: resource.NewWithAttributes("https://opentelemetry.io/schemas/1.21.0",
+				attribute.String("res1", "1.20.0"),
+				attribute.String("browser.user_agent", "go_test"),
+				attribute.String("res2", "1.21.0"),
+			),
+		},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resource.Merge(tt.res1, tt.res2)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+
+			got, err = resource.Merge(tt.res2, tt.res1)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
