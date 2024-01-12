@@ -208,10 +208,8 @@ func (i *int64Inst) Record(ctx context.Context, val int64, opts ...metric.Record
 var errUnsupportedAttr = errors.New("unsupported attribute value type")
 
 func checkAttr(set attribute.Set) error {
-	iter := set.Iter()
-	for iter.Next() {
-		switch t := iter.Attribute().Value.Type(); t {
-		case attribute.SLICE, attribute.MAP:
+	for _, t := range []attribute.Type{attribute.MAP, attribute.SLICE} {
+		if set.HasType(t) {
 			return fmt.Errorf("%v: %s", errUnsupportedAttr, t)
 		}
 	}
