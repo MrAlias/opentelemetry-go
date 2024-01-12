@@ -29,6 +29,7 @@ type (
 	// This type supports the Equivalent method of comparison using values of
 	// type Distinct.
 	Set struct {
+		vTypes     valueType
 		equivalent Distinct
 	}
 
@@ -45,6 +46,47 @@ type (
 	// provide in order to avoid an allocation. See NewSetWithSortable().
 	Sortable []KeyValue
 )
+
+type valueType uint16
+
+const (
+	boolType valueType = 1 << iota
+	int64Type
+	float64Type
+	stringType
+	boolsliceType
+	int64sliceType
+	float64sliceType
+	stringsliceType
+	sliceType
+	mapType
+)
+
+func vType(t Type) valueType {
+	switch t {
+	case BOOL:
+		return boolType
+	case INT64:
+		return int64Type
+	case FLOAT64:
+		return float64Type
+	case STRING:
+		return stringType
+	case BOOLSLICE:
+		return boolsliceType
+	case INT64SLICE:
+		return int64sliceType
+	case FLOAT64SLICE:
+		return float64sliceType
+	case STRINGSLICE:
+		return stringsliceType
+	case SLICE:
+		return sliceType
+	case MAP:
+		return mapType
+	}
+	return 0
+}
 
 var (
 	// keyValueType is used in computeDistinctReflect.
@@ -133,6 +175,14 @@ func (l *Set) HasValue(k Key) bool {
 	}
 	_, ok := l.Value(k)
 	return ok
+}
+
+// HasType tests whether a Type is contained in the set.
+func (l *Set) HasType(t Type) bool {
+	if l == nil {
+		return false
+	}
+	return l.vTypes&vType(t) > 0
 }
 
 // Iter returns an iterator for visiting the attributes in this set.
@@ -266,6 +316,7 @@ func NewSetWithSortableFiltered(kvs []KeyValue, tmp *Sortable, filter Filter) (S
 	position := len(kvs) - 1
 	offset := position - 1
 
+	var vt valueType
 	// The requirements stated above require that the stable
 	// result be placed in the end of the input slice, while
 	// overwritten values are swapped to the beginning.
@@ -276,6 +327,8 @@ func NewSetWithSortableFiltered(kvs []KeyValue, tmp *Sortable, filter Filter) (S
 		if kvs[offset].Key == kvs[position].Key {
 			continue
 		}
+		vt |= vType(kvs[position].Value.Type())
+
 		position--
 		kvs[offset], kvs[position] = kvs[position], kvs[offset]
 	}
@@ -286,7 +339,7 @@ func NewSetWithSortableFiltered(kvs []KeyValue, tmp *Sortable, filter Filter) (S
 			return Set{equivalent: computeDistinct(kvs[div:])}, kvs[:div]
 		}
 	}
-	return Set{equivalent: computeDistinct(kvs)}, nil
+	return Set{vTypes: vt, equivalent: computeDistinct(kvs)}, nil
 }
 
 // filteredToFront filters slice in-place using keep function. All KeyValues that need to
@@ -308,6 +361,7 @@ func filteredToFront(slice []KeyValue, keep Filter) int {
 // Filter returns a filtered copy of this Set. See the documentation for
 // NewSetWithSortableFiltered for more details.
 func (l *Set) Filter(re Filter) (Set, []KeyValue) {
+	// TODO: set vTypes on  returned Set.
 	if re == nil {
 		return *l, nil
 	}
