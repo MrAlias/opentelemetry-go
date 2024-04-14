@@ -7,7 +7,7 @@ require (
 	github.com/stretchr/testify v1.9.0
 	go.opentelemetry.io/otel v1.25.0
 	go.opentelemetry.io/otel/sdk/log v0.0.0-20240403115316-6c6e1e7416e9
-	go.opentelemetry.io/proto/otlp v1.1.0
+	go.opentelemetry.io/proto/otlp v1.2.0
 )
 
 require (
