@@ -5,6 +5,7 @@ package trace // import "go.opentelemetry.io/otel/trace"
 
 import (
 	"context"
+	"log"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -83,6 +84,7 @@ func (noopSpan) SetName(string) {}
 
 // TracerProvider returns a no-op TracerProvider.
 func (s noopSpan) TracerProvider() TracerProvider {
+	log.Printf("noopSpan.TracerProvider")
 	return s.tracerProvider(autoInstEnabled)
 }
 
@@ -98,6 +100,7 @@ var autoInstEnabled = new(bool)
 //
 //go:noinline
 func (noopSpan) tracerProvider(autoEnabled *bool) TracerProvider {
+	log.Printf("noopSpan.tracerProvider: autoEnabled: %t", *autoEnabled)
 	if *autoEnabled {
 		return newAutoTracerProvider()
 	}
