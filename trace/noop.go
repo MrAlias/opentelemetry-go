@@ -100,7 +100,7 @@ var autoInstEnabled = new(bool)
 //
 //go:noinline
 func (noopSpan) tracerProvider(autoEnabled *bool) TracerProvider {
-	log.Printf("noopSpan.tracerProvider: autoEnabled: %t", *autoEnabled)
+	log.Printf("noopSpan.tracerProvider autoEnabled: %t", *autoEnabled)
 	if *autoEnabled {
 		return newAutoTracerProvider()
 	}
