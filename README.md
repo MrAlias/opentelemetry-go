@@ -29,7 +29,7 @@ and
 Project versioning information and stability guarantees can be found in the
 [versioning documentation](VERSIONING.md).
 
-[^1]: https://github.com/orgs/open-telemetry/projects/43
+[^1]: <https://github.com/orgs/open-telemetry/projects/43>
 
 ### Compatibility
 
