@@ -219,6 +219,30 @@ func ExampleNewView_attributeFilter() {
 	)
 }
 
+func ExampleNewView_filterMeasurements() {
+	// Create a view that restricts values recorded by the "slo" instrument in
+	// the "http" instrumentation library to be within the range of 0 to 100.
+	view := metric.NewView(
+		metric.Instrument{
+			Name:  "slo",
+			Scope: instrumentation.Scope{Name: "http"},
+		},
+		metric.Stream{
+			Aggregation: metric.AggregationBandpass{
+				High:       100,
+				Low:        0,
+				Downstream: metric.AggregationDefault{},
+			},
+		},
+	)
+
+	// The created view can then be registered with the OpenTelemetry metric
+	// SDK using the WithView option.
+	_ = metric.NewMeterProvider(
+		metric.WithView(view),
+	)
+}
+
 func ExampleNewView_exponentialHistogram() {
 	// Create a view that makes the "latency" instrument from the "http"
 	// instrumentation library to be reported as an exponential histogram.
