@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -241,6 +242,39 @@ func ExampleNewView_addBaggageAttributes() {
 					[]attribute.KeyValue{attribute.String(key, m.Value())},
 					a.ToSlice()...,
 				)...)
+			},
+		},
+	)
+
+	// The created view can then be registered with the OpenTelemetry metric
+	// SDK using the WithView option.
+	_ = metric.NewMeterProvider(
+		metric.WithView(view),
+	)
+}
+
+func ExampleNewView_reduceCardinality() {
+	// Replaces know paths with low-cardinality template values.
+	routeAttr := attribute.String("http.route", "/api/v1/users/{user_id}")
+	view := metric.NewView(
+		metric.Instrument{
+			Name:  "latency",
+			Scope: instrumentation.Scope{Name: "http"},
+		},
+		metric.Stream{
+			AttributeFn: func(_ context.Context, a attribute.Set) attribute.Set {
+				v, ok := a.Value("http.route")
+				if !ok {
+					return a
+				}
+				if strings.HasPrefix(v.AsString(), "/api/v1/users/") {
+					// Replace the user ID with a low-cardinality value.
+					return attribute.NewSet(append(
+						[]attribute.KeyValue{routeAttr},
+						a.ToSlice()...,
+					)...)
+				}
+				return a
 			},
 		},
 	)
