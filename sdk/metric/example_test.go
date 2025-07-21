@@ -11,6 +11,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/exemplar"
@@ -210,6 +211,38 @@ func ExampleNewView_attributeFilter() {
 			Scope: instrumentation.Scope{Name: "http"},
 		},
 		metric.Stream{AttributeFilter: attribute.NewDenyKeysFilter("http.request.method")},
+	)
+
+	// The created view can then be registered with the OpenTelemetry metric
+	// SDK using the WithView option.
+	_ = metric.NewMeterProvider(
+		metric.WithView(view),
+	)
+}
+
+func ExampleNewView_addBaggageAttributes() {
+	// Create a view that adds my custom baggage attribute to all measurements
+	// of the "latency" instrument from the "slo" instrumentation library.
+	view := metric.NewView(
+		metric.Instrument{
+			Name:  "latency",
+			Scope: instrumentation.Scope{Name: "slo"},
+		},
+		metric.Stream{
+			AttributeFn: func(ctx context.Context, a attribute.Set) attribute.Set {
+				b := baggage.FromContext(ctx)
+				const key = "my.custom.baggage.attribute"
+				m := b.Member(key)
+				if m.Key() != key {
+					// Return the original set if baggage member not set.
+					return a
+				}
+				return attribute.NewSet(append(
+					[]attribute.KeyValue{attribute.String(key, m.Value())},
+					a.ToSlice()...,
+				)...)
+			},
+		},
 	)
 
 	// The created view can then be registered with the OpenTelemetry metric
