@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/internal/global"
 	"go.opentelemetry.io/otel/metric/embedded"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
@@ -524,12 +525,36 @@ func (i *inserter[N]) aggregateFunc(
 			noSum = true
 		}
 		meas, comp = b.ExponentialBucketHistogram(a.MaxSize, a.MaxScale, a.NoMinMax, noSum)
+	case AggregationBandpass:
+		d := a.Downstream
+		if d == nil {
+			// This is an error if the downstream is nil, this is a
+			// misconfiguration. However, "fail gracefully" and return nil in
+			// and out to signify the drop aggregator.
+			err = fmt.Errorf(
+				"%w: bandpass aggregation requires a downstream aggregator",
+				errAgg,
+			)
+		} else {
+			meas, comp, err = i.aggregateFunc(b, d, kind)
+			meas = bandpass(meas, a.High, a.Low)
+		}
 
 	default:
 		err = errUnknownAggregation
 	}
 
 	return meas, comp, err
+}
+
+func bandpass[N int64 | float64](m aggregate.Measure[N], high, low float64) aggregate.Measure[N] {
+	return func(ctx context.Context, n N, s attribute.Set) {
+		if n > N(high) || n < N(low) {
+			// Drop the measurement if it is outside of the bandpass.
+			return
+		}
+		m(ctx, n, s)
+	}
 }
 
 // isAggregatorCompatible checks if the aggregation can be used by the instrument.
