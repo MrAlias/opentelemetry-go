@@ -392,6 +392,7 @@ func (i *inserter[N]) cachedAggregator(
 				i.pipeline.exemplarFilter,
 			),
 		}
+		b.Annotater = stream.AttributeFn
 		b.Filter = stream.AttributeFilter
 		// A value less than or equal to zero will disable the aggregation
 		// limits for the builder (an all the created aggregates).

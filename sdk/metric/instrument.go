@@ -137,6 +137,10 @@ type Stream struct {
 	Unit string
 	// Aggregation the stream uses for an instrument.
 	Aggregation Aggregation
+	// AttributeFn is a function that updates attributes recorded made in the
+	// measurement stream. This is used to add or modify attributes before
+	// aggregation and filtering.
+	AttributeFn func(context.Context, attribute.Set) attribute.Set
 	// AttributeFilter is an attribute Filter applied to the attributes
 	// recorded for an instrument's measurement. If the filter returns false
 	// the attribute will not be recorded, otherwise, if it returns true, it
