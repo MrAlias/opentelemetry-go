@@ -33,6 +33,9 @@ type Builder[N int64 | float64] struct {
 	// Filter is the attribute filter the aggregate function will use on the
 	// input of measurements.
 	Filter attribute.Filter
+	// Annotater returns a new attribute set for the measurement
+	// attributes.
+	Annotater func(context.Context, attribute.Set) attribute.Set
 	// ReservoirFunc is the factory function used by aggregate functions to
 	// create new exemplar reservoirs for a new seen attribute set.
 	//
@@ -57,6 +60,18 @@ func (b Builder[N]) resFunc() func(attribute.Set) FilteredExemplarReservoir[N] {
 	return dropReservoir
 }
 
+func (b Builder[N]) annotate(m Measure[N]) Measure[N] {
+	if b.Annotater != nil {
+		fn := b.Annotater // Copy to make it immutable after assignment.
+		return func(ctx context.Context, n N, a attribute.Set) {
+			m(ctx, n, fn(ctx, a))
+		}
+	}
+	return func(ctx context.Context, n N, a attribute.Set) {
+		m(ctx, n, a)
+	}
+}
+
 type fltrMeasure[N int64 | float64] func(ctx context.Context, value N, fltrAttr attribute.Set, droppedAttr []attribute.KeyValue)
 
 func (b Builder[N]) filter(f fltrMeasure[N]) Measure[N] {
@@ -77,9 +92,9 @@ func (b Builder[N]) LastValue() (Measure[N], ComputeAggregation) {
 	lv := newLastValue[N](b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(lv.measure), lv.delta
+		return b.annotate(b.filter(lv.measure)), lv.delta
 	default:
-		return b.filter(lv.measure), lv.cumulative
+		return b.annotate(b.filter(lv.measure)), lv.cumulative
 	}
 }
 
@@ -90,9 +105,9 @@ func (b Builder[N]) PrecomputedLastValue() (Measure[N], ComputeAggregation) {
 	lv := newPrecomputedLastValue[N](b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(lv.measure), lv.delta
+		return b.annotate(b.filter(lv.measure)), lv.delta
 	default:
-		return b.filter(lv.measure), lv.cumulative
+		return b.annotate(b.filter(lv.measure)), lv.cumulative
 	}
 }
 
@@ -102,9 +117,9 @@ func (b Builder[N]) PrecomputedSum(monotonic bool) (Measure[N], ComputeAggregati
 	s := newPrecomputedSum[N](monotonic, b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(s.measure), s.delta
+		return b.annotate(b.filter(s.measure)), s.delta
 	default:
-		return b.filter(s.measure), s.cumulative
+		return b.annotate(b.filter(s.measure)), s.cumulative
 	}
 }
 
@@ -113,9 +128,9 @@ func (b Builder[N]) Sum(monotonic bool) (Measure[N], ComputeAggregation) {
 	s := newSum[N](monotonic, b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(s.measure), s.delta
+		return b.annotate(b.filter(s.measure)), s.delta
 	default:
-		return b.filter(s.measure), s.cumulative
+		return b.annotate(b.filter(s.measure)), s.cumulative
 	}
 }
 
@@ -128,9 +143,9 @@ func (b Builder[N]) ExplicitBucketHistogram(
 	h := newHistogram[N](boundaries, noMinMax, noSum, b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(h.measure), h.delta
+		return b.annotate(b.filter(h.measure)), h.delta
 	default:
-		return b.filter(h.measure), h.cumulative
+		return b.annotate(b.filter(h.measure)), h.cumulative
 	}
 }
 
@@ -143,9 +158,9 @@ func (b Builder[N]) ExponentialBucketHistogram(
 	h := newExponentialHistogram[N](maxSize, maxScale, noMinMax, noSum, b.AggregationLimit, b.resFunc())
 	switch b.Temporality {
 	case metricdata.DeltaTemporality:
-		return b.filter(h.measure), h.delta
+		return b.annotate(b.filter(h.measure)), h.delta
 	default:
-		return b.filter(h.measure), h.cumulative
+		return b.annotate(b.filter(h.measure)), h.cumulative
 	}
 }
 
