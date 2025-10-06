@@ -5,8 +5,6 @@ package aggregate // import "go.opentelemetry.io/otel/sdk/metric/internal/aggreg
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -33,8 +31,14 @@ type valueMap[N int64 | float64] struct {
 	// see hotColdWaitGroup for how this works.
 	clearValuesOnCollection bool
 	hcwg                    hotColdWaitGroup
-	values                  [2]sync.Map
-	len                     [2]atomic.Int64
+	values                  [2]atomicMap[N]
+}
+
+type atomicMap[N int64 | float64] interface {
+	Len() int
+	LoadOrStore(key attribute.Distinct, value *sumValue[N]) (actual *sumValue[N], loaded bool)
+	Range(f func(key attribute.Distinct, value *sumValue[N]) bool)
+	Clear()
 }
 
 func newValueMap[N int64 | float64](
@@ -42,10 +46,23 @@ func newValueMap[N int64 | float64](
 	r func(attribute.Set) FilteredExemplarReservoir[N],
 	clearValuesOnCollection bool,
 ) *valueMap[N] {
+	if limit < 0 {
+		limit = 0
+	}
+	var values [2]atomicMap[N]
+	// Use sync.Map if there is no limit, otherwise use cappedMap.
+	if limit == 0 {
+		values[0] = newAtomicSyncMap[N]()
+		values[1] = newAtomicSyncMap[N]()
+	} else {
+		values[0] = newCappedMap[N](limit, r)
+		values[1] = newCappedMap[N](limit, r)
+	}
 	return &valueMap[N]{
 		newRes:                  r,
 		aggLimit:                limit,
 		clearValuesOnCollection: clearValuesOnCollection,
+		values:                  values,
 	}
 }
 
@@ -55,29 +72,15 @@ func (s *valueMap[N]) measure(ctx context.Context, value N, fltrAttr attribute.S
 		hotIdx = s.hcwg.start()
 		defer s.hcwg.done(hotIdx)
 	}
-	v, ok := s.values[hotIdx].Load(fltrAttr.Equivalent())
-	if !ok {
-		// It is possible to exceed the attribute limit if it races with other
-		// new attribute sets. This is an accepted tradeoff to avoid locking
-		// for writes.
-		if s.aggLimit > 0 && s.len[hotIdx].Load() >= int64(s.aggLimit-1) {
-			fltrAttr = overflowSet
-		}
-		var loaded bool
-		v, loaded = s.values[hotIdx].LoadOrStore(fltrAttr.Equivalent(), &sumValue[N]{
-			res:   s.newRes(fltrAttr),
-			attrs: fltrAttr,
-		})
-		if !loaded {
-			s.len[hotIdx].Add(1)
-		}
-	}
-	sv := v.(*sumValue[N])
-	sv.n.add(value)
+	v, _ := s.values[hotIdx].LoadOrStore(fltrAttr.Equivalent(), &sumValue[N]{
+		res:   s.newRes(fltrAttr),
+		attrs: fltrAttr,
+	})
+	v.n.add(value)
 	// It is possible for collection to race with measurement and observe the
 	// exemplar in the batch of metrics after the add() for cumulative sums.
 	// This is an accepted tradeoff to avoid locking during measurement.
-	sv.res.Offer(ctx, value, droppedAttr)
+	v.res.Offer(ctx, value, droppedAttr)
 }
 
 // newSum returns an aggregator that summarizes a set of measurements as their
@@ -120,12 +123,11 @@ func (s *sum[N]) delta(
 	readIdx := s.hcwg.swapHotAndWait()
 	// The len will not change while we iterate over values, since we waited
 	// for all writes to finish to the cold values and len.
-	n := int(s.len[readIdx].Load())
+	n := s.values[readIdx].Len()
 	dPts := reset(sData.DataPoints, n, n)
 
 	var i int
-	s.values[readIdx].Range(func(_, value any) bool {
-		val := value.(*sumValue[N])
+	s.values[readIdx].Range(func(_ attribute.Distinct, val *sumValue[N]) bool {
 		collectExemplars(&dPts[i].Exemplars, val.res.Collect)
 		dPts[i].Attributes = val.attrs
 		dPts[i].StartTime = s.start
@@ -135,7 +137,6 @@ func (s *sum[N]) delta(
 		return true
 	})
 	s.values[readIdx].Clear()
-	s.len[readIdx].Store(0)
 	// The delta collection cycle resets.
 	s.start = t
 
@@ -159,11 +160,10 @@ func (s *sum[N]) cumulative(
 	readIdx := 0
 	// Values are being concurrently written while we iterate, so only use the
 	// current length for capacity.
-	dPts := reset(sData.DataPoints, 0, int(s.len[readIdx].Load()))
+	dPts := reset(sData.DataPoints, 0, s.values[readIdx].Len())
 
 	var i int
-	s.values[readIdx].Range(func(_, value any) bool {
-		val := value.(*sumValue[N])
+	s.values[readIdx].Range(func(_ attribute.Distinct, val *sumValue[N]) bool {
 		newPt := metricdata.DataPoint[N]{
 			Attributes: val.attrs,
 			StartTime:  s.start,
@@ -227,12 +227,11 @@ func (s *precomputedSum[N]) delta(
 	readIdx := s.hcwg.swapHotAndWait()
 	// The len will not change while we iterate over values, since we waited
 	// for all writes to finish to the cold values and len.
-	n := int(s.len[readIdx].Load())
+	n := s.values[readIdx].Len()
 	dPts := reset(sData.DataPoints, n, n)
 
 	var i int
-	s.values[readIdx].Range(func(key, value any) bool {
-		val := value.(*sumValue[N])
+	s.values[readIdx].Range(func(key attribute.Distinct, val *sumValue[N]) bool {
 		n := val.n.load()
 
 		delta := n - s.reported[key]
@@ -246,7 +245,6 @@ func (s *precomputedSum[N]) delta(
 		return true
 	})
 	s.values[readIdx].Clear()
-	s.len[readIdx].Store(0)
 	s.reported = newReported
 	// The delta collection cycle resets.
 	s.start = t
@@ -272,12 +270,11 @@ func (s *precomputedSum[N]) cumulative(
 	readIdx := s.hcwg.swapHotAndWait()
 	// The len will not change while we iterate over values, since we waited
 	// for all writes to finish to the cold values and len.
-	n := int(s.len[readIdx].Load())
+	n := s.values[readIdx].Len()
 	dPts := reset(sData.DataPoints, n, n)
 
 	var i int
-	s.values[readIdx].Range(func(_, value any) bool {
-		val := value.(*sumValue[N])
+	s.values[readIdx].Range(func(_ attribute.Distinct, val *sumValue[N]) bool {
 		collectExemplars(&dPts[i].Exemplars, val.res.Collect)
 		dPts[i].Attributes = val.attrs
 		dPts[i].StartTime = s.start
@@ -287,7 +284,6 @@ func (s *precomputedSum[N]) cumulative(
 		return true
 	})
 	s.values[readIdx].Clear()
-	s.len[readIdx].Store(0)
 
 	sData.DataPoints = dPts
 	*dest = sData
