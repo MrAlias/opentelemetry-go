@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/oops"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/x"
 	"go.opentelemetry.io/otel/internal/global"
 	"go.opentelemetry.io/otel/metric"
@@ -234,7 +236,7 @@ type ExportOp struct {
 // Any error that is encountered is provided as err.
 //
 // If err is not nil, all spans will be recorded as failures unless error is of
-// type [internal.PartialSuccess]. In the case of a PartialSuccess, the number
+// type [oops.ErrPartial]. In the case of a PartialSuccess, the number
 // of successfully exported spans will be determined by inspecting the
 // RejectedItems field of the PartialSuccess.
 func (e ExportOp) End(err error, code codes.Code) {
@@ -253,7 +255,7 @@ func (e ExportOp) End(err error, code codes.Code) {
 		attrs := get[attribute.KeyValue](measureAttrsPool)
 		defer put(measureAttrsPool, attrs)
 		*attrs = append(*attrs, e.inst.attrs...)
-		*attrs = append(*attrs, semconv.ErrorType(err))
+		*attrs = append(*attrs, ErrorType(err))
 
 		// Do not inefficiently make a copy of attrs by using
 		// WithAttributes instead of WithAttributeSet.
@@ -294,7 +296,7 @@ func (i *Instrumentation) recordOption(err error, code codes.Code) metric.Record
 	c := int64(code) // uint32 -> int64.
 	*attrs = append(*attrs, semconv.RPCGRPCStatusCodeKey.Int64(c))
 	if err != nil {
-		*attrs = append(*attrs, semconv.ErrorType(err))
+		*attrs = append(*attrs, ErrorType(err))
 	}
 
 	// Do not inefficiently make a copy of attrs by using WithAttributes
@@ -302,15 +304,46 @@ func (i *Instrumentation) recordOption(err error, code codes.Code) metric.Record
 	return metric.WithAttributeSet(attribute.NewSet(*attrs...))
 }
 
+func ErrorType(err error) attribute.KeyValue {
+	if err == nil {
+		return semconv.ErrorTypeOther
+	}
+
+	// Prioritize the domain specific error type if in chain.
+	var errRPC oops.ErrRPC
+	if errors.As(err, &errRPC) {
+		if errRPC.Code != codes.OK {
+			return semconv.ErrorType(&errRPC)
+		}
+	}
+
+	// Provide a more meaningful error type for wrapped errors.
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() error }:
+		return ErrorType(wrapped.Unwrap())
+	case interface{ Unwrap() []error }:
+		var b strings.Builder
+		for i, e := range wrapped.Unwrap() {
+			if i > 0 {
+				b.WriteString("; ")
+			}
+			b.WriteString(ErrorType(e).Value.AsString())
+		}
+		return semconv.ErrorTypeKey.String(b.String())
+	}
+
+	return semconv.ErrorType(err)
+}
+
 // successful returns the number of successfully exported spans out of the n
 // that were exported based on the provided error.
 //
 // If err is nil, n is returned. All spans were successfully exported.
 //
-// If err is not nil and not an [internal.PartialSuccess] error, 0 is returned.
+// If err is not nil and not an [oops.ErrPartial] error, 0 is returned.
 // It is assumed all spans failed to be exported.
 //
-// If err is an [internal.PartialSuccess] error, the number of successfully
+// If err is an [oops.ErrPartial] error, the number of successfully
 // exported spans is computed by subtracting the RejectedItems field from n. If
 // RejectedItems is negative, n is returned. If RejectedItems is greater than
 // n, 0 is returned.
@@ -323,19 +356,19 @@ func successful(n int64, err error) int64 {
 }
 
 var errPartialPool = &sync.Pool{
-	New: func() any { return new(internal.PartialSuccess) },
+	New: func() any { return new(oops.ErrPartial) },
 }
 
 // rejected returns how many out of the n spans exporter were rejected based on
 // the provided non-nil err.
 func rejected(n int64, err error) int64 {
-	ps := errPartialPool.Get().(*internal.PartialSuccess)
+	ps := errPartialPool.Get().(*oops.ErrPartial)
 	defer errPartialPool.Put(ps)
 	// Check for partial success.
 	if errors.As(err, ps) {
 		// Bound RejectedItems to [0, n]. This should not be needed,
 		// but be defensive as this is from an external source.
-		return min(max(ps.RejectedItems, 0), n)
+		return min(max(ps.Rejected, 0), n)
 	}
 	return n // All spans rejected.
 }

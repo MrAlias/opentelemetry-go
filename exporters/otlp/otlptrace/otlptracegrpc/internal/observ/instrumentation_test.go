@@ -5,6 +5,7 @@ package observ_test
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -15,8 +16,8 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/observ"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/oops"
 	mapi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -124,7 +125,8 @@ func baseAttrs(err error) []attribute.KeyValue {
 		semconv.ServerPort(ServerPort),
 	}
 	if err != nil {
-		attrs = append(attrs, semconv.ErrorType(err))
+		fmt.Println("error:", observ.ErrorType(err))
+		attrs = append(attrs, observ.ErrorType(err))
 	}
 	return attrs
 }
@@ -225,7 +227,7 @@ func TestInstrumentationExportSpansAllErrored(t *testing.T) {
 
 	const n = 10
 	c := codes.PermissionDenied
-	err := status.Error(c, "go away")
+	err := oops.ErrRPC{Code: c, Err: status.Error(c, "go away")}
 	inst.ExportSpans(t.Context(), n).End(err, c)
 
 	const success = 0
@@ -239,8 +241,10 @@ func TestInstrumentationExportSpansPartialErrored(t *testing.T) {
 	const success = n - 5
 
 	c := codes.Unavailable
-	err := status.Error(c, "temporary failure")
-	err = errors.Join(err, &internal.PartialSuccess{RejectedItems: 5})
+	err := errors.Join(
+		&oops.ErrRPC{Code: c, Err: status.Error(c, "temporary failure")},
+		&oops.ErrPartial{Rejected: 5},
+	)
 	inst.ExportSpans(t.Context(), n).End(err, c)
 
 	assertMetrics(t, collect(), n, success, err)
@@ -250,9 +254,10 @@ func TestInstrumentationExportSpansInvalidPartialErrored(t *testing.T) {
 	inst, collect := setup(t)
 
 	const n = 10
-	pErr := &internal.PartialSuccess{RejectedItems: -5}
+	pErr := &oops.ErrPartial{Rejected: -5}
 	c := codes.Unavailable
-	err := errors.Join(status.Error(c, "temporary"), pErr)
+	rpcErr := &oops.ErrRPC{Code: c, Err: status.Error(c, "temporary")}
+	err := errors.Join(rpcErr, pErr)
 	inst.ExportSpans(t.Context(), n).End(err, c)
 
 	// Round -5 to 0.
@@ -261,7 +266,7 @@ func TestInstrumentationExportSpansInvalidPartialErrored(t *testing.T) {
 
 	// Note: the metrics are cumulative, so account for the previous
 	// ExportSpans call.
-	pErr.RejectedItems = n + 5
+	pErr.Rejected = n + 5
 	inst.ExportSpans(t.Context(), n).End(err, c)
 
 	// Round n+5 to n.
@@ -351,7 +356,7 @@ func BenchmarkInstrumentationExportSpans(b *testing.B) {
 	}
 
 	b.Run("NoError", run(nil, codes.OK))
-	err := &internal.PartialSuccess{RejectedItems: 6}
+	err := &oops.ErrPartial{Rejected: 6}
 	b.Run("PartialError", run(err, codes.Unavailable))
 	b.Run("FullError", run(assert.AnError, codes.Aborted))
 }

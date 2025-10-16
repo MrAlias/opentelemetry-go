@@ -29,9 +29,9 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/counter"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/observ"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/oops"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/otlptracetest"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -408,10 +408,11 @@ func TestEmptyData(t *testing.T) {
 }
 
 func TestPartialSuccess(t *testing.T) {
+	const n, msg = 2, "partially successful"
 	mc := runMockCollectorWithConfig(t, &mockConfig{
 		partial: &coltracepb.ExportTracePartialSuccess{
-			RejectedSpans: 2,
-			ErrorMessage:  "partially successful",
+			RejectedSpans: n,
+			ErrorMessage:  msg,
 		},
 	})
 	t.Cleanup(func() { require.NoError(t, mc.stop()) })
@@ -421,7 +422,7 @@ func TestPartialSuccess(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, exp.Shutdown(ctx)) })
 
 	err := exp.ExportSpans(ctx, roSpans)
-	want := internal.TracePartialSuccessError(0, "")
+	want := oops.ErrPartial{Rejected: n, Message: msg}
 	assert.ErrorIs(t, err, want)
 }
 
@@ -469,7 +470,7 @@ func TestClientInstrumentation(t *testing.T) {
 
 	exp := newGRPCExporter(t, t.Context(), mc.endpoint)
 	err := exp.ExportSpans(t.Context(), roSpans)
-	assert.ErrorIs(t, err, internal.TracePartialSuccessError(n, msg))
+	assert.ErrorIs(t, err, oops.ErrPartial{Rejected: n, Message: msg})
 	require.NoError(t, exp.Shutdown(t.Context()))
 
 	var got metricdata.ResourceMetrics

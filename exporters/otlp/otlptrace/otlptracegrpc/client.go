@@ -18,9 +18,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/counter"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/observ"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/oops"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/otlpconfig"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc/internal/retry"
 )
@@ -212,24 +212,8 @@ func (c *client) UploadTraces(ctx context.Context, protoSpans []*tracepb.Resourc
 	}
 
 	return c.requestFunc(ctx, func(iCtx context.Context) error {
-		resp, err := c.tsc.Export(iCtx, &coltracepb.ExportTraceServiceRequest{
-			ResourceSpans: protoSpans,
-		})
-		if resp != nil && resp.PartialSuccess != nil {
-			msg := resp.PartialSuccess.GetErrorMessage()
-			n := resp.PartialSuccess.GetRejectedSpans()
-			if n != 0 || msg != "" {
-				e := internal.TracePartialSuccessError(n, msg)
-				uploadErr = errors.Join(uploadErr, e)
-			}
-		}
-		// nil is converted to OK.
-		code = status.Code(err)
-		if code == codes.OK {
-			// Success.
-			return uploadErr
-		}
-		return errors.Join(uploadErr, err)
+		req := &coltracepb.ExportTraceServiceRequest{ResourceSpans: protoSpans}
+		return oops.ParseError(c.tsc.Export(iCtx, req))
 	})
 }
 
