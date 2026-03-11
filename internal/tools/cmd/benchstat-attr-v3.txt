@@ -1,0 +1,131 @@
+goos: linux
+goarch: amd64
+pkg: go.opentelemetry.io/otel/attribute
+cpu: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
+                                   │ /tmp/bench-attr-base-v2.txt │    /tmp/bench-attr-current-v3.txt    │
+                                   │           sec/op            │    sec/op     vs base                │
+BoolSlice/Len2/Value-8                             130.65n ±  3%   16.90n ±  3%  -87.06% (p=0.000 n=12)
+BoolSlice/Len2/KeyValue-8                          135.85n ± 14%   23.49n ±  2%  -82.71% (p=0.000 n=12)
+BoolSlice/Len2/AsBoolSlice-8                        50.22n ±  1%   19.12n ± 15%  -61.92% (p=0.000 n=12)
+BoolSlice/Len2/Emit-8                               343.9n ±  1%   293.4n ±  1%  -14.68% (p=0.000 n=12)
+BoolSlice/Len8/Value-8                              134.7n ±  2%   136.4n ±  2%   +1.22% (p=0.011 n=12)
+BoolSlice/Len8/KeyValue-8                           137.7n ±  2%   140.6n ±  2%   +2.11% (p=0.046 n=12)
+BoolSlice/Len8/AsBoolSlice-8                        53.59n ± 22%   61.15n ± 22%  +14.11% (p=0.020 n=12)
+BoolSlice/Len8/Emit-8                               773.5n ±  1%   788.5n ±  2%   +1.93% (p=0.028 n=12)
+IntSlice/Len2/Value-8                              140.85n ±  2%   36.20n ±  3%  -74.30% (p=0.000 n=12)
+IntSlice/Len2/KeyValue-8                           149.65n ±  2%   42.84n ±  3%  -71.37% (p=0.000 n=12)
+IntSlice/Len2/Emit-8                                318.2n ±  3%   279.6n ± 15%  -12.15% (p=0.012 n=12)
+IntSlice/Len8/Value-8                               217.9n ±  1%   228.8n ±  2%   +5.00% (p=0.001 n=12)
+IntSlice/Len8/KeyValue-8                            225.6n ± 29%   232.3n ±  3%        ~ (p=0.767 n=12)
+IntSlice/Len8/Emit-8                                480.0n ±  1%   478.6n ±  2%        ~ (p=0.899 n=12)
+Int64Slice/Len2/Value-8                            150.90n ±  1%   27.43n ±  3%  -81.82% (p=0.000 n=12)
+Int64Slice/Len2/KeyValue-8                         152.05n ±  1%   34.34n ±  3%  -77.42% (p=0.000 n=12)
+Int64Slice/Len2/AsInt64Slice-8                      58.69n ±  4%   28.58n ±  3%  -51.30% (p=0.000 n=12)
+Int64Slice/Len2/Emit-8                              318.4n ±  3%   273.9n ±  1%  -13.99% (p=0.000 n=12)
+Int64Slice/Len8/Value-8                             173.0n ±  8%   177.8n ±  2%        ~ (p=0.173 n=12)
+Int64Slice/Len8/KeyValue-8                          184.0n ± 24%   184.3n ±  2%        ~ (p=0.701 n=12)
+Int64Slice/Len8/AsInt64Slice-8                      72.04n ±  2%   83.05n ±  2%  +15.30% (p=0.000 n=12)
+Int64Slice/Len8/Emit-8                              474.9n ± 19%   501.9n ± 18%   +5.67% (p=0.020 n=12)
+Float64Slice/Len2/Value-8                          150.95n ±  3%   26.92n ±  3%  -82.17% (p=0.000 n=12)
+Float64Slice/Len2/KeyValue-8                       153.95n ±  3%   33.08n ±  2%  -78.52% (p=0.000 n=12)
+Float64Slice/Len2/AsFloat64Slice-8                  60.31n ± 24%   27.02n ±  1%  -55.19% (p=0.000 n=12)
+Float64Slice/Len2/Emit-8                            434.2n ±  2%   380.4n ±  1%  -12.40% (p=0.000 n=12)
+Float64Slice/Len8/Value-8                           173.7n ±  2%   175.2n ± 25%        ~ (p=0.248 n=12)
+Float64Slice/Len8/KeyValue-8                        174.0n ±  4%   175.2n ±  2%        ~ (p=0.702 n=12)
+Float64Slice/Len8/AsFloat64Slice-8                  71.17n ±  8%   78.00n ±  4%   +9.58% (p=0.007 n=12)
+Float64Slice/Len8/Emit-8                            920.6n ± 20%   909.9n ±  8%        ~ (p=0.378 n=12)
+StringSlice/Len2/Value-8                           174.00n ±  5%   41.97n ± 20%  -75.88% (p=0.000 n=12)
+StringSlice/Len2/KeyValue-8                        179.85n ±  2%   46.76n ±  2%  -74.00% (p=0.000 n=12)
+StringSlice/Len2/AsStringSlice-8                    76.03n ±  5%   39.83n ±  3%  -47.61% (p=0.000 n=12)
+StringSlice/Len2/Emit-8                             386.0n ±  2%   332.3n ±  3%  -13.91% (p=0.000 n=12)
+StringSlice/Len8/Value-8                            225.4n ±  4%   226.2n ±  4%        ~ (p=0.311 n=12)
+StringSlice/Len8/KeyValue-8                         228.1n ±  7%   234.2n ±  4%        ~ (p=0.386 n=12)
+StringSlice/Len8/AsStringSlice-8                    110.8n ± 25%   117.8n ±  4%        ~ (p=0.173 n=12)
+StringSlice/Len8/Emit-8                             658.7n ±  3%   647.9n ±  5%        ~ (p=0.319 n=12)
+geomean                                             181.7n         110.7n        -39.08%
+
+                                   │ /tmp/bench-attr-base-v2.txt │    /tmp/bench-attr-current-v3.txt    │
+                                   │            B/op             │    B/op     vs base                  │
+BoolSlice/Len2/Value-8                                4.000 ± 0%   2.000 ± 0%  -50.00% (p=0.000 n=12)
+BoolSlice/Len2/KeyValue-8                             4.000 ± 0%   2.000 ± 0%  -50.00% (p=0.000 n=12)
+BoolSlice/Len2/AsBoolSlice-8                          2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len2/Emit-8                                 40.00 ± 0%   40.00 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/Value-8                                16.00 ± 0%   16.00 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/KeyValue-8                             16.00 ± 0%   16.00 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/AsBoolSlice-8                          8.000 ± 0%   8.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/Emit-8                                 88.00 ± 0%   88.00 ± 0%        ~ (p=1.000 n=12) ¹
+IntSlice/Len2/Value-8                                 32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+IntSlice/Len2/KeyValue-8                              32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+IntSlice/Len2/Emit-8                                  56.00 ± 0%   56.00 ± 0%        ~ (p=1.000 n=12) ¹
+IntSlice/Len8/Value-8                                 128.0 ± 0%   192.0 ± 0%  +50.00% (p=0.000 n=12)
+IntSlice/Len8/KeyValue-8                              128.0 ± 0%   192.0 ± 0%  +50.00% (p=0.000 n=12)
+IntSlice/Len8/Emit-8                                  136.0 ± 0%   136.0 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len2/Value-8                               32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+Int64Slice/Len2/KeyValue-8                            32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+Int64Slice/Len2/AsInt64Slice-8                        16.00 ± 0%   16.00 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len2/Emit-8                                56.00 ± 0%   56.00 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/Value-8                               128.0 ± 0%   128.0 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/KeyValue-8                            128.0 ± 0%   128.0 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/AsInt64Slice-8                        64.00 ± 0%   64.00 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/Emit-8                                136.0 ± 0%   136.0 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len2/Value-8                             32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+Float64Slice/Len2/KeyValue-8                          32.00 ± 0%   16.00 ± 0%  -50.00% (p=0.000 n=12)
+Float64Slice/Len2/AsFloat64Slice-8                    16.00 ± 0%   16.00 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len2/Emit-8                              56.00 ± 0%   56.00 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/Value-8                             128.0 ± 0%   128.0 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/KeyValue-8                          128.0 ± 0%   128.0 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/AsFloat64Slice-8                    64.00 ± 0%   64.00 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/Emit-8                              136.0 ± 0%   136.0 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len2/Value-8                              64.00 ± 0%   32.00 ± 0%  -50.00% (p=0.000 n=12)
+StringSlice/Len2/KeyValue-8                           64.00 ± 0%   32.00 ± 0%  -50.00% (p=0.000 n=12)
+StringSlice/Len2/AsStringSlice-8                      32.00 ± 0%   32.00 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len2/Emit-8                               120.0 ± 0%   120.0 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/Value-8                              256.0 ± 0%   256.0 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/KeyValue-8                           256.0 ± 0%   256.0 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/AsStringSlice-8                      128.0 ± 0%   128.0 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/Emit-8                               344.0 ± 0%   344.0 ± 0%        ~ (p=1.000 n=12) ¹
+geomean                                               49.39        42.05       -14.88%
+¹ all samples are equal
+
+                                   │ /tmp/bench-attr-base-v2.txt │    /tmp/bench-attr-current-v3.txt    │
+                                   │          allocs/op          │ allocs/op   vs base                  │
+BoolSlice/Len2/Value-8                                2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+BoolSlice/Len2/KeyValue-8                             2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+BoolSlice/Len2/AsBoolSlice-8                          1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len2/Emit-8                                 5.000 ± 0%   5.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/Value-8                                2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/KeyValue-8                             2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/AsBoolSlice-8                          1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+BoolSlice/Len8/Emit-8                                 11.00 ± 0%   11.00 ± 0%        ~ (p=1.000 n=12) ¹
+IntSlice/Len2/Value-8                                 2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+IntSlice/Len2/KeyValue-8                              2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+IntSlice/Len2/Emit-8                                  4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+IntSlice/Len8/Value-8                                 2.000 ± 0%   3.000 ± 0%  +50.00% (p=0.000 n=12)
+IntSlice/Len8/KeyValue-8                              2.000 ± 0%   3.000 ± 0%  +50.00% (p=0.000 n=12)
+IntSlice/Len8/Emit-8                                  4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len2/Value-8                               2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+Int64Slice/Len2/KeyValue-8                            2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+Int64Slice/Len2/AsInt64Slice-8                        1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len2/Emit-8                                4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/Value-8                               2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/KeyValue-8                            2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/AsInt64Slice-8                        1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+Int64Slice/Len8/Emit-8                                4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len2/Value-8                             2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+Float64Slice/Len2/KeyValue-8                          2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+Float64Slice/Len2/AsFloat64Slice-8                    1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len2/Emit-8                              4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/Value-8                             2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/KeyValue-8                          2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/AsFloat64Slice-8                    1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+Float64Slice/Len8/Emit-8                              4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len2/Value-8                              2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+StringSlice/Len2/KeyValue-8                           2.000 ± 0%   1.000 ± 0%  -50.00% (p=0.000 n=12)
+StringSlice/Len2/AsStringSlice-8                      1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len2/Emit-8                               4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/Value-8                              2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/KeyValue-8                           2.000 ± 0%   2.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/AsStringSlice-8                      1.000 ± 0%   1.000 ± 0%        ~ (p=1.000 n=12) ¹
+StringSlice/Len8/Emit-8                               4.000 ± 0%   4.000 ± 0%        ~ (p=1.000 n=12) ¹
+geomean                                               2.143        1.824       -14.88%
+¹ all samples are equal

@@ -1,0 +1,17 @@
+bitbucket.org/adhocmonster/gokit
+bitbucket.org/amotus/telemetry
+bitbucket.org/ayopop/ct-merchants
+bitbucket.org/danamas/common-lib
+bitbucket.org/danamas/supplio-pillar
+bitbucket.org/espinpro/espincore
+bitbucket.org/gytis_zest/go-apm-telemetry-test
+bitbucket.org/hokego/go-zero
+bitbucket.org/hokego/hokego-td
+bitbucket.org/loomo/loomousdtgobackend
+bitbucket.org/meditap/go-common-beego
+bitbucket.org/pimenta-group/golibs
+bitbucket.org/rctiplus/vegapunk
+bitbucket.org/saygames/highkick
+bitbucket.org/saygames/repository
+bitbucket.org/vipdesigncomua/mds-sdk
+bitbucket.org/webcrazy/task-queue-helpers

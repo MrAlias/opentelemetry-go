@@ -1,0 +1,14 @@
+constructor,kind,value,count
+BoolSlice,dynamic,,3
+BoolSlice,total,,3
+Float64Slice,dynamic,,3
+Float64Slice,total,,3
+Int64Slice,dynamic,,6
+Int64Slice,total,,6
+IntSlice,dynamic,,5
+IntSlice,total,,5
+StringSlice,literal_len,0,1
+StringSlice,literal_len,1,8
+StringSlice,literal_len,2,1
+StringSlice,dynamic,,121
+StringSlice,total,,131

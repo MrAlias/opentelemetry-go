@@ -1,0 +1,66 @@
+goos: linux
+goarch: amd64
+pkg: go.opentelemetry.io/otel/attribute/internal
+cpu: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
+BenchmarkBoolSliceValue-8      	 9146527	       122.5 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9900432	       122.3 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9102942	       123.6 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9362973	       130.2 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9064026	       126.1 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9839479	       126.7 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 8010230	       129.5 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9505864	       128.7 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9270108	       127.8 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9248821	       124.8 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9608965	       128.8 ns/op	       8 B/op	       2 allocs/op
+BenchmarkBoolSliceValue-8      	 9261423	       128.2 ns/op	       8 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8005293	       143.0 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8289132	       142.1 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8582802	       143.4 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8119772	       154.6 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8415960	       156.4 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8676158	       143.8 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8079522	       153.4 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 7728794	       152.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8347448	       149.4 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8553584	       147.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8073758	       144.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkInt64SliceValue-8     	 8047003	       146.1 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 7957870	       151.9 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 8274174	       149.1 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 8246343	       143.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 6983779	       148.2 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 7898869	       150.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 8287999	       151.6 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 7573460	       161.0 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 7032508	       154.6 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 8445704	       157.8 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 7486004	       154.3 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 8029611	       146.5 ns/op	      64 B/op	       2 allocs/op
+BenchmarkFloat64SliceValue-8   	 6848814	       155.6 ns/op	      64 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6765488	       180.0 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6994081	       184.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6686373	       177.6 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 5916561	       184.6 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6669342	       189.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6053230	       189.5 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6879549	       177.8 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 5870148	       181.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6766933	       191.4 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6931753	       185.7 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6117330	       179.1 ns/op	     128 B/op	       2 allocs/op
+BenchmarkStringSliceValue-8    	 6062913	       175.7 ns/op	     128 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	21503194	        57.16 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	21061510	        55.08 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	20391936	        60.22 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	20759149	        57.52 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	22007245	        59.98 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	21891375	        57.93 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	18710373	        57.14 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	22248385	        57.62 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	22658484	        60.45 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	21151444	        59.39 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	24240998	        57.23 ns/op	      40 B/op	       2 allocs/op
+BenchmarkAsFloat64Slice-8      	21540298	        56.82 ns/op	      40 B/op	       2 allocs/op
+PASS
+ok  	go.opentelemetry.io/otel/attribute/internal	72.114s
