@@ -20,7 +20,7 @@ import (
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	otelmetric "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 )
 
 func Example() {
