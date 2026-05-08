@@ -3,15 +3,6 @@
 
 The `go.opentelemetry.io/otel/semconv/v1.41.0` package should be a drop-in replacement for `go.opentelemetry.io/otel/semconv/v1.40.0` with the following exceptions.
 
-## Renames
-
-The following renames have been introduced to better match Go and industry naming standards.
-Be sure to update any use from `go.opentelemetry.io/otel/semconv/v1.40.0` with the equivalent in `go.opentelemetry.io/otel/semconv/v1.41.0`.
-
-| `v1.40.0` | `v1.41.0` |
-| --- | --- |
-| `ErrorType` | `errorType` |
-
 ## Removed
 
 The following declarations have been removed.
