@@ -187,3 +187,33 @@ func (e AggregationBase2ExponentialHistogram) err() error {
 	}
 	return nil
 }
+
+// AggregationBandpass is an [Aggregation] that only records measurements to
+// its Downstream Aggregation if they fall within the specified High and Low
+// bounds. Measurements outside of these bounds are dropped.
+type AggregationBandpass struct {
+	High, Low  float64
+	Downstream Aggregation
+}
+
+var _ Aggregation = AggregationBandpass{}
+
+// copy returns a deep copy of d.
+func (d AggregationBandpass) copy() Aggregation {
+	return AggregationBandpass{
+		High:       d.High,
+		Low:        d.Low,
+		Downstream: d.Downstream.copy(),
+	}
+}
+
+// err returns an error for any misconfiguration.
+func (d AggregationBandpass) err() error {
+	if d.High <= d.Low {
+		return fmt.Errorf("%w: high bound %f is less than or equal to low bound %f", errAgg, d.High, d.Low)
+	}
+	if d.Downstream == nil {
+		return fmt.Errorf("%w: downstream aggregation is nil", errAgg)
+	}
+	return nil
+}
